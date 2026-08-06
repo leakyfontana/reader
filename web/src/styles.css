@@ -1,0 +1,613 @@
+:root {
+    color-scheme: light;
+    --paper: #c9fbff;
+    --surface: #c2fcf7;
+    --surface-strong: color-mix(in srgb, #c2fcf7 55%, #85bdbf);
+    --ink: #040f0f;
+    --muted: #57737a;
+    --line: #85bdbf;
+    --accent: #57737a;
+    --accent-ink: #c9fbff;
+    --shadow: 0 16px 50px rgb(4 15 15 / 16%);
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
+}
+
+:root[data-theme='dark'] {
+    color-scheme: dark;
+    --paper: #040f0f;
+    --surface: color-mix(in srgb, #040f0f 82%, #57737a);
+    --surface-strong: color-mix(in srgb, #040f0f 58%, #57737a);
+    --ink: #c9fbff;
+    --muted: #85bdbf;
+    --line: #57737a;
+    --accent: #85bdbf;
+    --accent-ink: #040f0f;
+    --shadow: 0 16px 50px rgb(4 15 15 / 52%);
+}
+
+:root[data-theme='night'] {
+    color-scheme: dark;
+    --paper: #0d0805;
+    --surface: #17100b;
+    --surface-strong: #26180f;
+    --ink: #efc58f;
+    --muted: #b78257;
+    --line: #51301d;
+    --accent: #d79a5b;
+    --accent-ink: #0d0805;
+    --shadow: 0 16px 50px rgb(0 0 0 / 64%);
+}
+
+* {
+    box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+}
+
+body {
+    background: var(--paper);
+    color: var(--ink);
+}
+
+button,
+select,
+input {
+    font: inherit;
+}
+
+button {
+    color: inherit;
+}
+
+button:focus-visible,
+select:focus-visible,
+input:focus-visible {
+    outline: 3px solid color-mix(in srgb, var(--accent), transparent 55%);
+    outline-offset: 2px;
+}
+
+.app-bar {
+    position: relative;
+    z-index: 10;
+    display: grid;
+    grid-template-columns: 48px minmax(0, 1fr) 48px 48px;
+    align-items: center;
+    min-height: 64px;
+    padding: max(6px, env(safe-area-inset-top)) 8px 6px;
+    border-bottom: 1px solid var(--line);
+    background: color-mix(in srgb, var(--surface), transparent 4%);
+}
+
+.title-group {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    padding: 0 10px;
+}
+
+#book-title,
+#book-progress {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#book-title {
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: 1.05rem;
+}
+
+#book-progress {
+    color: var(--muted);
+    font-size: 0.75rem;
+}
+
+.icon-button,
+.nav-button {
+    display: inline-grid;
+    min-width: 44px;
+    min-height: 44px;
+    place-items: center;
+    border: 0;
+    border-radius: 12px;
+    background: transparent;
+    cursor: pointer;
+}
+
+.icon-button:active,
+.nav-button:active {
+    background: var(--surface-strong);
+}
+
+.library-view {
+    height: calc(100% - 64px);
+    padding: 28px clamp(18px, 5vw, 56px) 48px;
+    overflow-y: auto;
+}
+
+.library-heading {
+    display: flex;
+    max-width: 1120px;
+    margin: 0 auto 28px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+}
+
+.library-heading h1 {
+    margin: 4px 0 6px;
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: clamp(2.2rem, 7vw, 4rem);
+    font-weight: 500;
+    letter-spacing: -0.04em;
+    line-height: 1;
+}
+
+.library-empty > p {
+    margin: 0;
+    color: var(--muted);
+}
+
+
+.plus-button {
+    position: relative;
+}
+
+.plus-button::before,
+.plus-button::after {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 16px;
+    height: 2px;
+    border-radius: 999px;
+    background: currentColor;
+    content: '';
+    transform: translate(-50%, -50%);
+}
+
+.plus-button::after {
+    transform: translate(-50%, -50%) rotate(90deg);
+}
+
+
+.welcome-mark {
+    display: grid;
+    width: 72px;
+    height: 92px;
+    place-items: center;
+    border: 2px solid var(--ink);
+    border-radius: 3px 12px 12px 3px;
+    box-shadow: inset 6px 0 var(--surface-strong), 6px 6px 0 var(--accent);
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: 1.7rem;
+    font-weight: 700;
+}
+
+.library-empty {
+    display: flex;
+    min-height: min(560px, 70vh);
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    text-align: center;
+}
+
+.library-empty h2 {
+    margin: 28px 0 8px;
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: clamp(1.8rem, 7vw, 2.7rem);
+    font-weight: 500;
+}
+
+.primary-button {
+    min-height: 48px;
+    padding: 0 24px;
+    border: 0;
+    border-radius: 999px;
+    background: var(--accent);
+    color: var(--accent-ink);
+    cursor: pointer;
+    font-weight: 700;
+}
+
+.library-empty .primary-button {
+    margin-top: 22px;
+}
+
+.formats {
+    max-width: 480px;
+    margin-top: 26px !important;
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    line-height: 1.7;
+    text-transform: uppercase;
+}
+
+.library-grid {
+    display: grid;
+    max-width: 1120px;
+    margin: auto;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+    gap: 14px;
+}
+
+.library-card {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: 54px minmax(0, 1fr) 44px;
+    align-items: center;
+    gap: 13px;
+    padding: 14px;
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    background: var(--surface);
+    box-shadow: 0 5px 18px rgb(4 15 15 / 12%);
+}
+
+.book-cover {
+    width: 54px;
+    height: 72px;
+    overflow: hidden;
+    border-radius: 4px 8px 8px 4px;
+    background: var(--surface-strong);
+    box-shadow: 0 4px 10px rgb(0 0 0 / 18%);
+}
+
+.book-cover img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.book-spine {
+    display: grid;
+    width: 54px;
+    height: 72px;
+    place-items: center;
+    border-radius: 2px 9px 9px 2px;
+    background: var(--accent);
+    color: var(--accent-ink);
+    font-size: 0.66rem;
+    font-weight: 850;
+    letter-spacing: 0.06em;
+    box-shadow: inset 5px 0 rgb(0 0 0 / 12%);
+}
+
+.library-book-button {
+    min-width: 0;
+    padding: 8px 0;
+    border: 0;
+    background: transparent;
+    color: var(--ink);
+    cursor: pointer;
+    text-align: left;
+}
+
+.library-book-button strong,
+.library-book-button span {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.library-book-button strong {
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: 1.05rem;
+}
+
+.library-book-button span {
+    margin-top: 5px;
+    color: var(--muted);
+    font-size: 0.75rem;
+}
+
+.library-book-button .library-book-progress-text {
+    margin-top: 7px;
+    color: var(--accent);
+    font-weight: 750;
+}
+
+.library-book-progress {
+    display: block;
+    width: 100%;
+    height: 4px;
+    margin-top: 6px;
+    overflow: hidden;
+    border: 0;
+    border-radius: 999px;
+    appearance: none;
+    background: var(--surface-strong);
+    accent-color: var(--accent);
+}
+
+.library-book-progress::-webkit-progress-bar {
+    background: var(--surface-strong);
+}
+
+.library-book-progress::-webkit-progress-value {
+    background: var(--accent);
+}
+
+.remove-book-button {
+    color: var(--muted);
+    font-size: 1.2rem;
+}
+
+.reader-shell {
+    height: calc(100% - 64px);
+}
+
+.reader-shell:not([hidden]) {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) 56px;
+}
+
+body.reader-controls-hidden .app-bar,
+body.reader-controls-hidden .reader-nav {
+    display: none;
+}
+
+body.reader-controls-hidden .reader-shell {
+    height: 100%;
+    grid-template-rows: minmax(0, 1fr);
+}
+
+.reader {
+    position: relative;
+    min-height: 0;
+    background: var(--paper);
+}
+
+.reader foliate-view {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+.djvu-view {
+    display: grid;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    place-items: center;
+    touch-action: pan-y;
+}
+
+.djvu-page {
+    display: block;
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    background: #fff;
+    box-shadow: 0 8px 28px rgb(0 0 0 / 22%);
+    user-select: none;
+}
+
+:root[data-theme='dark'] .reader foliate-view.pdf::part(filter) {
+    filter: invert(0.9) hue-rotate(180deg) brightness(0.88) contrast(0.95);
+}
+
+:root[data-theme='dark'] .reader .djvu-page {
+    filter: invert(0.9) hue-rotate(180deg) brightness(0.88) contrast(0.95);
+}
+
+:root[data-theme='night'] .reader foliate-view.pdf::part(filter) {
+    filter: invert(0.92) sepia(0.62) saturate(0.72) brightness(0.52) contrast(0.92);
+}
+
+:root[data-theme='night'] .reader .djvu-page {
+    filter: invert(0.92) sepia(0.62) saturate(0.72) brightness(0.52) contrast(0.92);
+}
+
+.reader-nav {
+    display: grid;
+    grid-template-columns: 52px 44px minmax(0, 1fr) 52px;
+    align-items: center;
+    padding: 4px 8px max(4px, env(safe-area-inset-bottom));
+    border-top: 1px solid var(--line);
+    background: var(--surface);
+}
+
+#progress-slider {
+    width: 100%;
+    accent-color: var(--accent);
+}
+
+.chapters-button:disabled {
+    opacity: 0.3;
+}
+
+.menu-icon {
+    width: 18px;
+    height: 2px;
+    border-radius: 999px;
+    background: currentColor;
+    box-shadow: 0 -6px currentColor, 0 6px currentColor;
+}
+
+.chapters-dialog form {
+    display: grid;
+    max-height: min(70vh, 620px);
+    grid-template-rows: auto minmax(0, 1fr);
+}
+
+.chapter-list {
+    overflow-y: auto;
+    border-top: 1px solid var(--line);
+}
+
+.chapter-list ol {
+    margin: 0;
+    padding: 6px 0 6px 14px;
+    list-style: none;
+}
+
+.chapter-list > ol {
+    padding-left: 0;
+}
+
+.chapter-link {
+    width: 100%;
+    min-height: 42px;
+    padding: 8px 10px;
+    border: 0;
+    border-radius: 9px;
+    background: transparent;
+    color: var(--ink);
+    cursor: pointer;
+    text-align: left;
+}
+
+.chapter-link:disabled {
+    color: var(--muted);
+    cursor: default;
+    font-weight: 700;
+}
+
+.chapter-link[aria-current='location'] {
+    background: var(--surface-strong);
+    color: var(--accent);
+    font-weight: 750;
+}
+
+.settings-dialog {
+    width: min(440px, calc(100% - 24px));
+    margin: auto auto max(12px, env(safe-area-inset-bottom));
+    padding: 0;
+    border: 1px solid var(--line);
+    border-radius: 24px;
+    background: var(--surface);
+    color: var(--ink);
+    box-shadow: var(--shadow);
+}
+
+.settings-dialog::backdrop {
+    background: rgb(0 0 0 / 42%);
+    backdrop-filter: blur(2px);
+}
+
+.settings-dialog form {
+    padding: 18px;
+}
+
+.settings-dialog header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+
+.settings-dialog h2 {
+    margin: 0;
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: 1.35rem;
+}
+
+.field {
+    display: grid;
+    gap: 9px;
+    padding: 14px 0;
+    border-top: 1px solid var(--line);
+    font-size: 0.9rem;
+    font-weight: 650;
+}
+
+.toggle-field {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    cursor: pointer;
+}
+
+.toggle-field span {
+    display: grid;
+    gap: 4px;
+}
+
+.toggle-field strong {
+    font: inherit;
+}
+
+.toggle-field small {
+    color: var(--muted);
+    font-size: 0.78rem;
+    font-weight: 450;
+    line-height: 1.35;
+}
+
+.toggle-field input {
+    width: 22px;
+    height: 22px;
+    margin: 0;
+    accent-color: var(--accent);
+}
+
+.field select {
+    width: 100%;
+    min-height: 44px;
+    padding: 0 12px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--paper);
+    color: var(--ink);
+}
+
+.range-field > span {
+    display: flex;
+    justify-content: space-between;
+}
+
+.range-field output {
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.range-field input {
+    width: 100%;
+    accent-color: var(--accent);
+}
+
+.status {
+    position: fixed;
+    z-index: 30;
+    right: 16px;
+    bottom: max(16px, env(safe-area-inset-bottom));
+    left: 16px;
+    max-width: 620px;
+    margin: auto;
+    padding: 13px 16px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--surface);
+    box-shadow: var(--shadow);
+    font-size: 0.9rem;
+}
+
+.status.error {
+    border-color: #b65347;
+}
+
+[hidden] {
+    display: none !important;
+}
+
+
+@media (min-width: 700px) {
+    .app-bar {
+        padding-right: 18px;
+        padding-left: 18px;
+    }
+
+    .reader-nav {
+        padding-right: 18px;
+        padding-left: 18px;
+    }
+}
