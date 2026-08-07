@@ -22,6 +22,8 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowInsets;
 
+import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.ByteArrayInputStream;
@@ -37,6 +39,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.List;
 
 public final class MainActivity extends Activity {
     private static final String APP_HOST = "reader.local";
@@ -190,12 +193,13 @@ public final class MainActivity extends Activity {
 
                     closeDjvuLocked();
                     DjvuDocument opened = new DjvuDocument(cached.getAbsolutePath());
-                    int[] firstPage = opened.getPageSize(0);
                     djvuDocument = opened;
                     djvuBookKey = bookKey;
+                    int[] firstPage = opened.getPageSize(0);
                     result.put("pageCount", opened.getPageCount());
                     result.put("width", firstPage[0]);
                     result.put("height", firstPage[1]);
+                    result.put("toc", djvuOutline(opened.getOutline()));
                 } catch (Exception error) {
                     closeDjvuLocked();
                     try {
@@ -226,6 +230,18 @@ public final class MainActivity extends Activity {
                 }
             }
         }
+    }
+
+    private JSONArray djvuOutline(List<DjvuDocument.OutlineItem> items) throws JSONException {
+        JSONArray result = new JSONArray();
+        for (DjvuDocument.OutlineItem item : items) {
+            JSONObject entry = new JSONObject();
+            entry.put("label", item.label);
+            if (item.pageIndex >= 0) entry.put("href", item.pageIndex);
+            if (!item.subitems.isEmpty()) entry.put("subitems", djvuOutline(item.subitems));
+            result.put(entry);
+        }
+        return result;
     }
 
     private void cachePendingDjvu(File target) throws IOException {
