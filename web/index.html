@@ -53,7 +53,9 @@
             </nav>
         </section>
 
-        <input id="file-input" type="file" hidden accept=".epub,.pdf,.djvu,.mobi,.prc,.azw,.azw3,.fb2,.fbz,.fb2.zip,.cbz,.txt,.text,.md,.html,.htm,.xhtml,application/epub+zip,application/pdf,image/vnd.djvu,application/x-mobipocket-ebook,application/vnd.amazon.ebook,application/vnd.comicbook+zip,application/x-fictionbook+xml,text/plain,text/html">
+        <input id="file-input" type="file" hidden accept=".epub,.pdf,.djvu,.djv,.mobi,.prc,.azw,.azw3,.fb2,.fbz,.fb2.zip,.cbz,.txt,.text,.md,.html,.htm,.xhtml,application/epub+zip,application/pdf,image/vnd.djvu,application/x-mobipocket-ebook,application/vnd.amazon.ebook,application/vnd.comicbook+zip,application/x-fictionbook+xml,text/plain,text/html">
+
+        <button id="selection-lookup-button" class="primary-button selection-lookup-button" type="button" hidden>Define</button>
 
         <dialog id="settings-dialog" class="settings-dialog">
             <form method="dialog">
@@ -109,6 +111,16 @@
                     <button class="icon-button" value="close" aria-label="Close chapters">×</button>
                 </header>
                 <nav id="chapter-list" class="chapter-list" aria-label="Table of contents"></nav>
+            </form>
+        </dialog>
+
+        <dialog id="dictionary-dialog" class="settings-dialog dictionary-dialog" aria-labelledby="dictionary-word">
+            <form method="dialog">
+                <header>
+                    <h2 id="dictionary-word">Definition</h2>
+                    <button class="icon-button" value="close" aria-label="Close dictionary">×</button>
+                </header>
+                <div id="dictionary-results" class="dictionary-results" aria-live="polite"></div>
             </form>
         </dialog>
 

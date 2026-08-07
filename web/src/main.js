@@ -9,6 +9,7 @@ import {
     saveBookCover,
     saveBookProgress,
 } from './library.js'
+import { lookupDictionary, lookupTermFromSelection } from './dictionary.js'
 
 const SUPPORTED_EXTENSIONS = [
     '.epub', '.pdf', '.djvu', '.djv', '.mobi', '.prc', '.azw', '.azw3',
@@ -43,6 +44,10 @@ const elements = {
     chaptersButton: $('#chapters-button'),
     chaptersDialog: $('#chapters-dialog'),
     chapterList: $('#chapter-list'),
+    selectionLookupButton: $('#selection-lookup-button'),
+    dictionaryDialog: $('#dictionary-dialog'),
+    dictionaryWord: $('#dictionary-word'),
+    dictionaryResults: $('#dictionary-results'),
     status: $('#status'),
     settings: $('#settings-dialog'),
     themeButton: $('#theme-button'),
@@ -71,6 +76,12 @@ let progressSavePromise = Promise.resolve()
 let currentProgressFraction = 0
 let sliderLocationTotal = 0
 let sliderTooltipTimer = null
+let selectionLookupTimer = null
+let selectedLookupDocument = null
+let selectedLookupText = ''
+let selectedLookupTerm = ''
+let dictionaryLookupText = ''
+let dictionaryRequest = 0
 
 function scheduleBookProgress(fraction) {
     if (!currentBookId || !currentBookStored || !Number.isFinite(fraction)) return
@@ -200,6 +211,7 @@ function toggleReaderControls(event) {
     if (!preferences.hideControls || event.defaultPrevented) return
     if (event.target?.closest?.('a, button, input, select, textarea, label')) return
     const selection = event.currentTarget.getSelection?.()
+        ?? event.currentTarget.ownerDocument?.getSelection?.()
     if (selection && !selection.isCollapsed) return
     readerControlsVisible = !readerControlsVisible
     applyReaderControlVisibility()
@@ -230,7 +242,166 @@ function listenForReaderTaps({ detail }) {
         }
         toggleReaderControls(event)
     })
+    doc.addEventListener('selectionchange', () => scheduleSelectionLookup(doc))
+    doc.addEventListener('pointerup', () => scheduleSelectionLookup(doc, 0))
+    doc.addEventListener('keyup', () => scheduleSelectionLookup(doc, 0))
 }
+
+function clearSelectionLookup(removeSelection = false) {
+    clearTimeout(selectionLookupTimer)
+    selectionLookupTimer = null
+    if (removeSelection && selectedLookupDocument) {
+        try {
+            selectedLookupDocument.getSelection()?.removeAllRanges()
+        } catch {
+            // The book section may already have been unloaded.
+        }
+    }
+    selectedLookupDocument = null
+    selectedLookupText = ''
+    selectedLookupTerm = ''
+    elements.selectionLookupButton.hidden = true
+}
+
+function updateSelectionLookup(doc) {
+    if (!readerView || elements.dictionaryDialog.open) return
+    const selection = doc.getSelection?.()
+    const rangeContainer = selection && !selection.isCollapsed && selection.rangeCount
+        ? selection.getRangeAt(0).commonAncestorContainer
+        : null
+    const rangeElement = rangeContainer?.nodeType === Node.ELEMENT_NODE
+        ? rangeContainer
+        : rangeContainer?.parentElement
+    const insideReaderText = doc !== document || Boolean(rangeElement?.closest('.djvu-text-layer'))
+    const text = selection && !selection.isCollapsed && insideReaderText
+        ? selection.toString().replace(/\s+/g, ' ').trim()
+        : ''
+    const term = lookupTermFromSelection(text)
+    if (!term) {
+        if (selectedLookupDocument === doc) clearSelectionLookup()
+        return
+    }
+
+    selectedLookupDocument = doc
+    selectedLookupText = text
+    selectedLookupTerm = term
+    const shortTerm = term.length > 32 ? `${term.slice(0, 29)}…` : term
+    elements.selectionLookupButton.textContent = `Define “${shortTerm}”`
+    elements.selectionLookupButton.setAttribute('aria-label', `Define ${term}`)
+    elements.selectionLookupButton.hidden = false
+}
+
+function scheduleSelectionLookup(doc, delay = 180) {
+    clearTimeout(selectionLookupTimer)
+    selectionLookupTimer = setTimeout(() => {
+        selectionLookupTimer = null
+        updateSelectionLookup(doc)
+    }, delay)
+}
+
+function createDictionaryEntry(match) {
+    const entry = document.createElement('section')
+    entry.className = 'dictionary-entry'
+
+    const heading = document.createElement('h3')
+    heading.textContent = match.lemma
+    entry.append(heading)
+
+    if (match.pronunciations.length) {
+        const pronunciation = document.createElement('p')
+        pronunciation.className = 'dictionary-pronunciation'
+        pronunciation.textContent = match.pronunciations
+            .map(item => `${item.variety ? `${item.variety} ` : ''}/${item.value}/`)
+            .join(' · ')
+        entry.append(pronunciation)
+    }
+
+    const groupedSenses = new Map()
+    for (const sense of match.senses) {
+        const senses = groupedSenses.get(sense.partOfSpeech) ?? []
+        senses.push(sense)
+        groupedSenses.set(sense.partOfSpeech, senses)
+    }
+
+    for (const [partOfSpeech, senses] of groupedSenses) {
+        const group = document.createElement('section')
+        group.className = 'dictionary-part'
+        const groupHeading = document.createElement('h4')
+        groupHeading.textContent = partOfSpeech
+        const list = document.createElement('ol')
+        list.className = 'dictionary-senses'
+
+        for (const sense of senses) {
+            const item = document.createElement('li')
+            const definition = document.createElement('p')
+            definition.className = 'dictionary-definition'
+            definition.textContent = sense.definition
+            item.append(definition)
+
+            for (const value of sense.examples) {
+                const example = document.createElement('p')
+                example.className = 'dictionary-example'
+                example.textContent = `“${value}”`
+                item.append(example)
+            }
+            if (sense.synonyms.length) {
+                const synonyms = document.createElement('p')
+                synonyms.className = 'dictionary-synonyms'
+                synonyms.textContent = `Synonyms: ${sense.synonyms.join(', ')}`
+                item.append(synonyms)
+            }
+            list.append(item)
+        }
+        group.append(groupHeading, list)
+        entry.append(group)
+    }
+    return entry
+}
+
+function renderDictionaryResult(result) {
+    elements.dictionaryResults.removeAttribute('aria-busy')
+    if (!result.matches.length) {
+        const empty = document.createElement('p')
+        empty.className = 'dictionary-empty'
+        empty.textContent = `No English definition was found for “${result.term}”.`
+        elements.dictionaryResults.replaceChildren(empty)
+        return
+    }
+
+    elements.dictionaryResults.replaceChildren(
+        ...result.matches.map(createDictionaryEntry),
+    )
+    elements.dictionaryResults.scrollTop = 0
+}
+
+async function showDictionaryLookup() {
+    if (!selectedLookupTerm || elements.dictionaryDialog.open) return
+    dictionaryLookupText = selectedLookupText
+    elements.dictionaryWord.textContent = selectedLookupTerm
+    const loading = document.createElement('p')
+    loading.className = 'dictionary-loading'
+    loading.textContent = 'Looking up…'
+    elements.dictionaryResults.replaceChildren(loading)
+    elements.dictionaryResults.setAttribute('aria-busy', 'true')
+    elements.dictionaryDialog.showModal()
+
+    const request = ++dictionaryRequest
+    try {
+        const result = await lookupDictionary(dictionaryLookupText)
+        if (request === dictionaryRequest && elements.dictionaryDialog.open) {
+            renderDictionaryResult(result)
+        }
+    } catch (error) {
+        console.error('Could not load the dictionary', error)
+        if (request !== dictionaryRequest || !elements.dictionaryDialog.open) return
+        elements.dictionaryResults.removeAttribute('aria-busy')
+        const message = document.createElement('p')
+        message.className = 'dictionary-error'
+        message.textContent = `The dictionary could not be loaded: ${error.message}`
+        elements.dictionaryResults.replaceChildren(message)
+    }
+}
+
 
 function showStatus(message, isError = false, duration = 0) {
     clearTimeout(statusTimer)
@@ -606,6 +777,11 @@ function djvuPageUrl(page, width, height, request) {
     return `/__djvu/page?${params}`
 }
 
+function djvuTextUrl(page, request) {
+    const params = new URLSearchParams({ page, request })
+    return `/__djvu/text?${params}`
+}
+
 async function openDjvuBook(file, addToLibrary, initialProgress) {
     const bridge = globalThis.ReaderDjvu
     if (!bridge?.open) throw new Error('DjVu reading requires the Android app')
@@ -643,23 +819,35 @@ async function openDjvuBook(file, addToLibrary, initialProgress) {
     }
 
     const view = document.createElement('div')
+    const pageContainer = document.createElement('div')
     const canvas = document.createElement('canvas')
+    const textLayer = document.createElement('div')
     const canvasContext = canvas.getContext('2d', { alpha: false })
     if (!canvasContext) throw new Error('This device cannot display DjVu pages')
     view.className = 'djvu-view'
+    pageContainer.className = 'djvu-page-container'
     canvas.className = 'djvu-page'
     canvas.setAttribute('role', 'img')
-    view.append(canvas)
+    textLayer.className = 'djvu-text-layer'
+    textLayer.hidden = true
+    textLayer.onpointerdown = () => textLayer.classList.add('selecting')
+    textLayer.onpointerup = () => textLayer.classList.remove('selecting')
+    textLayer.onpointercancel = () => textLayer.classList.remove('selecting')
+    pageContainer.append(canvas, textLayer)
+    view.append(pageContainer)
     readerView = view
     elements.reader.replaceChildren(view)
 
     const pageCache = new Map()
     const pendingPages = new Map()
+    const pageTextCache = new Map()
+    const pendingPageText = new Map()
     const pageAbortController = new AbortController()
     const pageCacheLimit = 5
     let pageIndex = 0
     let renderRequest = 0
     let pageRequestSequence = 0
+    let pageTextRequestSequence = 0
     let destroyed = false
     let resizeTimer = null
     let renderedWidth = 0
@@ -718,6 +906,202 @@ async function openDjvuBook(file, addToLibrary, initialProgress) {
         pendingPages.set(key, pending)
         return pending
     }
+    const cachedPageText = index => {
+        const cached = pageTextCache.get(index)
+        if (!cached) return null
+        pageTextCache.delete(index)
+        pageTextCache.set(index, cached)
+        return cached
+    }
+    const loadPageText = index => {
+        if (destroyed) return Promise.reject(new Error('The DjVu document is closed'))
+        const cached = cachedPageText(index)
+        if (cached) return Promise.resolve(cached)
+        if (pendingPageText.has(index)) return pendingPageText.get(index)
+
+        const pending = (async () => {
+            const request = `${index}-${++pageTextRequestSequence}`
+            const response = await fetch(djvuTextUrl(index, request), {
+                cache: 'no-store',
+                signal: pageAbortController.signal,
+            })
+            if (!response.ok) {
+                const message = await response.text()
+                throw new Error(message || `Could not read DjVu page ${index + 1} text`)
+            }
+            const pageText = await response.json()
+            if (!Number.isFinite(pageText?.width)
+                || pageText.width <= 0
+                || !Number.isFinite(pageText?.height)
+                || pageText.height <= 0
+                || !Array.isArray(pageText?.words)) {
+                throw new Error(`DjVu page ${index + 1} returned invalid text`)
+            }
+            const words = pageText.words.filter(word =>
+                Array.isArray(word)
+                && word.length === 5
+                && typeof word[0] === 'string'
+                && word[0]
+                && word.slice(1).every(Number.isFinite)
+                && word[1] >= 0
+                && word[2] >= 0
+                && word[3] > word[1]
+                && word[4] > word[2]
+                && word[3] <= pageText.width
+                && word[4] <= pageText.height)
+            const result = { width: pageText.width, height: pageText.height, words }
+            pageTextCache.set(index, result)
+            while (pageTextCache.size > pageCacheLimit) {
+                pageTextCache.delete(pageTextCache.keys().next().value)
+            }
+            return result
+        })().finally(() => pendingPageText.delete(index))
+        pendingPageText.set(index, pending)
+        return pending
+    }
+    const fitPage = bitmap => {
+        const availableWidth = Math.max(1, view.clientWidth)
+        const availableHeight = Math.max(1, view.clientHeight)
+        const scale = Math.min(
+            availableWidth / bitmap.width,
+            availableHeight / bitmap.height,
+        )
+        const width = Math.max(1, Math.round(bitmap.width * scale))
+        const height = Math.max(1, Math.round(bitmap.height * scale))
+        pageContainer.style.width = `${width}px`
+        pageContainer.style.height = `${height}px`
+        return { width, height }
+    }
+    const renderTextLayer = (pageText, displaySize, label) => {
+        clearSelectionLookup(true)
+        textLayer.replaceChildren()
+        textLayer.hidden = true
+        canvas.setAttribute('role', 'img')
+        canvas.removeAttribute('aria-hidden')
+        if (!pageText?.words.length) return
+
+        const scaleX = displaySize.width / pageText.width
+        const scaleY = displaySize.height / pageText.height
+        const words = pageText.words.map(word => ({
+            text: word[0],
+            left: word[1] * scaleX,
+            top: (pageText.height - word[4]) * scaleY,
+            width: (word[3] - word[1]) * scaleX,
+            height: (word[4] - word[2]) * scaleY,
+        })).sort((left, right) => left.top - right.top || left.left - right.left)
+        const lines = []
+        for (const word of words) {
+            const line = lines.at(-1)
+            const sameLine = line
+                && Math.abs(line.top - word.top)
+                    <= Math.max(line.fontSize, word.height) * 0.6
+            if (!sameLine) {
+                lines.push({
+                    top: word.top,
+                    fontSize: word.height,
+                    words: [word],
+                })
+                continue
+            }
+            line.top = Math.min(line.top, word.top)
+            line.fontSize = Math.max(line.fontSize, word.height)
+            line.words.push(word)
+        }
+
+        const flow = document.createElement('div')
+        flow.className = 'djvu-text-flow'
+        flow.style.paddingTop = `${lines[0].top}px`
+        const renderedLines = []
+        for (const [index, line] of lines.entries()) {
+            line.words.sort((left, right) => left.left - right.left)
+            const left = line.words[0].left
+            const right = Math.max(...line.words.map(word => word.left + word.width))
+            const span = document.createElement('span')
+            const offsets = []
+            let text = ''
+            let characters = 0
+            for (const [wordIndex, word] of line.words.entries()) {
+                if (wordIndex) {
+                    text += ' '
+                    characters += 1
+                }
+                offsets.push({ offset: text.length, characters })
+                text += word.text
+                characters += Array.from(word.text).length
+            }
+            span.className = 'djvu-text-line'
+            span.textContent = text
+            span.style.marginLeft = `${left}px`
+            span.style.fontSize = `${line.fontSize}px`
+            span.style.lineHeight = `${line.fontSize}px`
+
+            const nextTop = lines[index + 1]?.top ?? displaySize.height
+            const spacer = document.createElement('span')
+            spacer.className = 'djvu-text-line-spacer'
+            spacer.style.height = `${Math.max(line.fontSize, nextTop - line.top)}px`
+            flow.append(span, spacer, document.createElement('br'))
+            renderedLines.push({
+                span,
+                offsets,
+                words: line.words,
+                characters,
+                left,
+                width: right - left,
+            })
+        }
+
+        const endOfContent = document.createElement('div')
+        endOfContent.className = 'djvu-text-end'
+        textLayer.append(flow, endOfContent)
+        textLayer.setAttribute('aria-label', label)
+        textLayer.hidden = false
+        canvas.removeAttribute('role')
+        canvas.setAttribute('aria-hidden', 'true')
+
+        const range = document.createRange()
+        const fittedLines = renderedLines.map(line => {
+            const textNode = line.span.firstChild
+            const prefixWidth = offset => {
+                range.setStart(textNode, 0)
+                range.setEnd(textNode, offset)
+                return range.getBoundingClientRect().width
+            }
+            const spaces = line.words.length - 1
+            const endDelta = line.width - prefixWidth(textNode.length)
+            if (!spaces) {
+                return {
+                    span: line.span,
+                    letterSpacing: endDelta / Math.max(1, line.characters),
+                    wordSpacing: 0,
+                }
+            }
+
+            let numerator = 0
+            let denominator = 0
+            for (let index = 1; index < line.words.length; index++) {
+                const offset = line.offsets[index]
+                const target = line.words[index].left - line.left
+                const delta = target - prefixWidth(offset.offset)
+                const coefficient = offset.characters
+                    - (index * line.characters / spaces)
+                const remainder = delta - (index * endDelta / spaces)
+                numerator += coefficient * remainder
+                denominator += coefficient * coefficient
+            }
+            const letterSpacing = denominator
+                ? numerator / denominator
+                : endDelta / Math.max(1, line.characters)
+            return {
+                span: line.span,
+                letterSpacing,
+                wordSpacing: (endDelta - (line.characters * letterSpacing)) / spaces,
+            }
+        })
+        for (const { span, letterSpacing, wordSpacing } of fittedLines) {
+            span.style.letterSpacing = `${letterSpacing}px`
+            span.style.wordSpacing = `${wordSpacing}px`
+        }
+    }
     const ignorePrefetchError = error => {
         if (error?.name !== 'AbortError' && !destroyed) {
             console.warn('Could not pre-render an adjacent DjVu page', error)
@@ -746,7 +1130,15 @@ async function openDjvuBook(file, addToLibrary, initialProgress) {
         const { width, height } = targetSize()
         renderedWidth = width
         renderedHeight = height
-        const bitmap = await loadPage(nextIndex)
+        const [bitmap, pageText] = await Promise.all([
+            loadPage(nextIndex),
+            loadPageText(nextIndex).catch(error => {
+                if (error?.name !== 'AbortError' && !destroyed) {
+                    console.warn(`Could not read DjVu page ${nextIndex + 1} text`, error)
+                }
+                return null
+            }),
+        ])
         if (!bitmap || request !== renderRequest || destroyed) return
 
         canvas.width = bitmap.width
@@ -754,7 +1146,10 @@ async function openDjvuBook(file, addToLibrary, initialProgress) {
         canvasContext.fillStyle = '#fff'
         canvasContext.fillRect(0, 0, canvas.width, canvas.height)
         canvasContext.drawImage(bitmap, 0, 0)
-        canvas.setAttribute('aria-label', `Page ${nextIndex + 1} of ${info.pageCount}`)
+        const pageLabel = `Page ${nextIndex + 1} of ${info.pageCount}`
+        canvas.setAttribute('aria-label', pageLabel)
+        const displaySize = fitPage(bitmap)
+        renderTextLayer(pageText, displaySize, pageLabel)
         pageIndex = nextIndex
         const fraction = info.pageCount === 1 ? 0 : pageIndex / (info.pageCount - 1)
         updateLocation({
@@ -809,6 +1204,8 @@ async function openDjvuBook(file, addToLibrary, initialProgress) {
         }
     }, { passive: true })
     view.addEventListener('touchend', event => {
+        const selection = document.getSelection()
+        if (selection && !selection.isCollapsed) return
         const touch = event.changedTouches[0]
         const horizontal = touch.clientX - touchX
         const vertical = touch.clientY - touchY
@@ -837,6 +1234,8 @@ async function openDjvuBook(file, addToLibrary, initialProgress) {
             removeEventListener('resize', onResize)
             for (const bitmap of pageCache.values()) bitmap.close()
             pageCache.clear()
+            pageTextCache.clear()
+            pendingPageText.clear()
             bridge.close()
         },
     }
@@ -893,6 +1292,8 @@ async function openDjvuBook(file, addToLibrary, initialProgress) {
 
 async function closeCurrentBook() {
     if (elements.chaptersDialog.open) elements.chaptersDialog.close()
+    if (elements.dictionaryDialog.open) elements.dictionaryDialog.close()
+    clearSelectionLookup(true)
     renderChapters([])
     await flushBookProgress()
     if (readerView) {
@@ -1070,6 +1471,7 @@ function readableError(error) {
 }
 
 function updateLocation({ detail }) {
+    if (detail.reason !== 'selection') clearSelectionLookup()
     const sectionIndex = detail.section?.current
     const sectionCount = detail.section?.total
     const fixedLayoutLocation = readerView?.isFixedLayout
@@ -1128,6 +1530,21 @@ elements.settings.addEventListener('click', event => {
 $('#chapters-button').addEventListener('click', () => {
     if (!elements.chaptersButton.disabled) elements.chaptersDialog.showModal()
 })
+elements.selectionLookupButton.addEventListener('click', showDictionaryLookup)
+elements.dictionaryDialog.addEventListener('click', event => {
+    if (event.target !== elements.dictionaryDialog) return
+    const bounds = elements.dictionaryDialog.getBoundingClientRect()
+    const outside = event.clientX < bounds.left
+        || event.clientX > bounds.right
+        || event.clientY < bounds.top
+        || event.clientY > bounds.bottom
+    if (outside) elements.dictionaryDialog.close()
+})
+elements.dictionaryDialog.addEventListener('close', () => {
+    dictionaryRequest += 1
+    dictionaryLookupText = ''
+    clearSelectionLookup(true)
+})
 elements.themeButton.addEventListener('click', () => {
     updatePreference('theme', nextTheme(resolvedTheme()))
 })
@@ -1165,7 +1582,10 @@ elements.hideControlsInput.addEventListener('change', event =>
     updatePreference('hideControls', event.target.checked))
 
 addEventListener('keydown', event => {
-    if (!readerView || elements.settings.open) return
+    if (!readerView
+        || elements.settings.open
+        || elements.chaptersDialog.open
+        || elements.dictionaryDialog.open) return
     if (event.key === 'Escape' && !readerControlsVisible) {
         readerControlsVisible = true
         applyReaderControlVisibility()
@@ -1173,6 +1593,12 @@ addEventListener('keydown', event => {
     }
     if (event.key === 'ArrowLeft') readerView.goLeft()
     if (event.key === 'ArrowRight') readerView.goRight()
+})
+document.addEventListener('selectionchange', () => {
+    if (currentKind === 'djvu') scheduleSelectionLookup(document)
+})
+document.addEventListener('pointerup', () => {
+    if (currentKind === 'djvu') scheduleSelectionLookup(document, 0)
 })
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
     if (preferences.theme === 'system') applyPreferences()

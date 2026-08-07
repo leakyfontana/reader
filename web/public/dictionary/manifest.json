@@ -1,0 +1,172 @@
+{
+  "version": 1,
+  "format": "gzip-json-letter-buckets-v1",
+  "source": "Open English WordNet 2025",
+  "sourceUrl": "https://en-word.net/downloads/english-wordnet-2025-json.zip",
+  "sourceSha256": "7d749f6e2c39e6970e4997839dcf6e42fd281f3c2fae0171d2192bae8cfa4b51",
+  "license": "CC BY 4.0 and the Princeton WordNet License",
+  "buckets": {
+    "0": {
+      "entries": 310,
+      "aliases": 0,
+      "bytes": 36643,
+      "compressedBytes": 7664
+    },
+    "a": {
+      "entries": 8860,
+      "aliases": 175,
+      "bytes": 1652520,
+      "compressedBytes": 502963
+    },
+    "b": {
+      "entries": 7744,
+      "aliases": 301,
+      "bytes": 1458538,
+      "compressedBytes": 457495
+    },
+    "c": {
+      "entries": 12726,
+      "aliases": 406,
+      "bytes": 2496761,
+      "compressedBytes": 767841
+    },
+    "d": {
+      "entries": 6388,
+      "aliases": 235,
+      "bytes": 1329909,
+      "compressedBytes": 411763
+    },
+    "e": {
+      "entries": 4682,
+      "aliases": 122,
+      "bytes": 933135,
+      "compressedBytes": 291365
+    },
+    "f": {
+      "entries": 5361,
+      "aliases": 262,
+      "bytes": 1099369,
+      "compressedBytes": 344019
+    },
+    "g": {
+      "entries": 4395,
+      "aliases": 206,
+      "bytes": 852212,
+      "compressedBytes": 267937
+    },
+    "h": {
+      "entries": 5068,
+      "aliases": 152,
+      "bytes": 931613,
+      "compressedBytes": 287416
+    },
+    "i": {
+      "entries": 4280,
+      "aliases": 68,
+      "bytes": 865207,
+      "compressedBytes": 266135
+    },
+    "j": {
+      "entries": 1067,
+      "aliases": 57,
+      "bytes": 204183,
+      "compressedBytes": 64837
+    },
+    "k": {
+      "entries": 1251,
+      "aliases": 39,
+      "bytes": 233653,
+      "compressedBytes": 72706
+    },
+    "l": {
+      "entries": 4818,
+      "aliases": 147,
+      "bytes": 905154,
+      "compressedBytes": 281811
+    },
+    "m": {
+      "entries": 7075,
+      "aliases": 218,
+      "bytes": 1301271,
+      "compressedBytes": 396402
+    },
+    "n": {
+      "entries": 3110,
+      "aliases": 77,
+      "bytes": 551558,
+      "compressedBytes": 168633
+    },
+    "o": {
+      "entries": 3083,
+      "aliases": 124,
+      "bytes": 582489,
+      "compressedBytes": 180481
+    },
+    "p": {
+      "entries": 10398,
+      "aliases": 323,
+      "bytes": 2018236,
+      "compressedBytes": 620652
+    },
+    "q": {
+      "entries": 541,
+      "aliases": 27,
+      "bytes": 114170,
+      "compressedBytes": 35745
+    },
+    "r": {
+      "entries": 5512,
+      "aliases": 199,
+      "bytes": 1190790,
+      "compressedBytes": 374117
+    },
+    "s": {
+      "entries": 14391,
+      "aliases": 689,
+      "bytes": 2903178,
+      "compressedBytes": 894821
+    },
+    "t": {
+      "entries": 6628,
+      "aliases": 254,
+      "bytes": 1297460,
+      "compressedBytes": 402322
+    },
+    "u": {
+      "entries": 3176,
+      "aliases": 91,
+      "bytes": 553951,
+      "compressedBytes": 167452
+    },
+    "v": {
+      "entries": 2100,
+      "aliases": 43,
+      "bytes": 389021,
+      "compressedBytes": 118045
+    },
+    "w": {
+      "entries": 3400,
+      "aliases": 152,
+      "bytes": 666417,
+      "compressedBytes": 207002
+    },
+    "x": {
+      "entries": 163,
+      "aliases": 0,
+      "bytes": 24645,
+      "compressedBytes": 7147
+    },
+    "y": {
+      "entries": 457,
+      "aliases": 17,
+      "bytes": 80630,
+      "compressedBytes": 25631
+    },
+    "z": {
+      "entries": 327,
+      "aliases": 12,
+      "bytes": 58314,
+      "compressedBytes": 18051
+    }
+  }
+}

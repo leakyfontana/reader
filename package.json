@@ -12,6 +12,7 @@
     "foliate-js": "github:johnfactotum/foliate-js#78914aef4466eb960965702401634c2cb348e9b1"
   },
   "devDependencies": {
+    "fflate": "^0.8.2",
     "vite": "^7.0.0"
   }
 }
