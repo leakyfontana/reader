@@ -176,6 +176,7 @@ public final class MainActivity extends Activity {
         }
     }
 
+
     public final class ReaderDjvu {
         @JavascriptInterface
         public String open(String bookKey, boolean importPendingFile) {
@@ -422,6 +423,7 @@ public final class MainActivity extends Activity {
             if (!"https".equals(uri.getScheme()) || !APP_HOST.equals(uri.getHost())) return null;
             if ("/__book".equals(uri.getPath())) return pendingBookResponse();
             if ("/__djvu/page".equals(uri.getPath())) return djvuPageResponse(uri);
+            if ("/__djvu/text".equals(uri.getPath())) return djvuTextResponse(uri);
             return assetResponse(uri.getPath());
         }
 
@@ -469,6 +471,37 @@ public final class MainActivity extends Activity {
                 bitmap.recycle();
             }
         } catch (RuntimeException error) {
+            return errorResponse(500, errorMessage(error));
+        }
+    }
+
+    private WebResourceResponse djvuTextResponse(Uri uri) {
+        try {
+            int page = boundedQueryInteger(uri, "page", 0, 100_000);
+            DjvuDocument.TextPage textPage;
+            synchronized (djvuLock) {
+                if (djvuDocument == null) return errorResponse(404, "No DjVu document is open");
+                textPage = djvuDocument.getPageText(page);
+            }
+
+            JSONArray words = new JSONArray();
+            for (DjvuDocument.TextWord word : textPage.words) {
+                JSONArray encodedWord = new JSONArray();
+                encodedWord.put(word.text);
+                encodedWord.put(word.left);
+                encodedWord.put(word.bottom);
+                encodedWord.put(word.right);
+                encodedWord.put(word.top);
+                words.put(encodedWord);
+            }
+            JSONObject result = new JSONObject();
+            result.put("width", textPage.width);
+            result.put("height", textPage.height);
+            result.put("words", words);
+            return response(
+                    "application/json",
+                    new ByteArrayInputStream(result.toString().getBytes(StandardCharsets.UTF_8)));
+        } catch (JSONException | RuntimeException error) {
             return errorResponse(500, errorMessage(error));
         }
     }

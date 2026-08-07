@@ -2,6 +2,7 @@
 #include <android/log.h>
 #include <jni.h>
 
+#include <cstring>
 #include <cstdint>
 #include <string>
 #include <unistd.h>
@@ -88,6 +89,14 @@ struct OutlineEntry {
     int pageIndex;
 };
 
+struct TextWord {
+    std::string text;
+    int left;
+    int bottom;
+    int right;
+    int top;
+};
+
 int outlinePage(ddjvu_document_t *document, const char *url) {
     if (!url || !*url) return -1;
     const char *target = url[0] == '#' ? url + 1 : url;
@@ -108,6 +117,42 @@ void appendOutlineEntries(ddjvu_document_t *document, miniexp_t items, int depth
             appendOutlineEntries(document, miniexp_cddr(item), depth + 1, entries);
         }
         items = miniexp_cdr(items);
+    }
+}
+
+void appendTextWords(miniexp_t expression, std::vector<TextWord> *words) {
+    if (!miniexp_consp(expression)) return;
+    const char *type = miniexp_to_name(miniexp_car(expression));
+    if (type && std::strcmp(type, "word") == 0) {
+        if (miniexp_length(expression) < 6) return;
+        miniexp_t left = miniexp_nth(1, expression);
+        miniexp_t bottom = miniexp_nth(2, expression);
+        miniexp_t right = miniexp_nth(3, expression);
+        miniexp_t top = miniexp_nth(4, expression);
+        miniexp_t text = miniexp_nth(5, expression);
+        if (!miniexp_numberp(left)
+            || !miniexp_numberp(bottom)
+            || !miniexp_numberp(right)
+            || !miniexp_numberp(top)
+            || !miniexp_stringp(text)) {
+            return;
+        }
+        const char *value = miniexp_to_str(text);
+        if (!value || !*value) return;
+        words->push_back({
+            value,
+            miniexp_to_int(left),
+            miniexp_to_int(bottom),
+            miniexp_to_int(right),
+            miniexp_to_int(top),
+        });
+        return;
+    }
+
+    for (miniexp_t items = miniexp_cdr(expression);
+         miniexp_consp(items);
+         items = miniexp_cdr(items)) {
+        appendTextWords(miniexp_car(items), words);
     }
 }
 
@@ -142,6 +187,42 @@ jobjectArray makeOutlineResult(JNIEnv *env, const std::vector<OutlineEntry> &ent
     env->SetObjectArrayElement(result, 1, locations);
     env->DeleteLocalRef(labels);
     env->DeleteLocalRef(locations);
+    return result;
+}
+
+jobjectArray makeTextResult(JNIEnv *env, const std::vector<TextWord> &words) {
+    jclass objectClass = env->FindClass("java/lang/Object");
+    jclass byteArrayClass = env->FindClass("[B");
+    if (!objectClass || !byteArrayClass) return nullptr;
+
+    const jsize count = static_cast<jsize>(words.size());
+    jobjectArray result = env->NewObjectArray(2, objectClass, nullptr);
+    jobjectArray texts = env->NewObjectArray(count, byteArrayClass, nullptr);
+    jintArray bounds = env->NewIntArray(count * 4);
+    if (!result || !texts || !bounds) return nullptr;
+
+    std::vector<jint> boundValues(words.size() * 4);
+    for (jsize index = 0; index < count; index++) {
+        const TextWord &word = words[index];
+        jbyteArray text = env->NewByteArray(static_cast<jsize>(word.text.size()));
+        if (!text) return nullptr;
+        env->SetByteArrayRegion(
+                text,
+                0,
+                static_cast<jsize>(word.text.size()),
+                reinterpret_cast<const jbyte *>(word.text.data()));
+        env->SetObjectArrayElement(texts, index, text);
+        env->DeleteLocalRef(text);
+        boundValues[index * 4] = word.left;
+        boundValues[(index * 4) + 1] = word.bottom;
+        boundValues[(index * 4) + 2] = word.right;
+        boundValues[(index * 4) + 3] = word.top;
+    }
+    env->SetIntArrayRegion(bounds, 0, count * 4, boundValues.data());
+    env->SetObjectArrayElement(result, 0, texts);
+    env->SetObjectArrayElement(result, 1, bounds);
+    env->DeleteLocalRef(texts);
+    env->DeleteLocalRef(bounds);
     return result;
 }
 
@@ -208,6 +289,33 @@ Java_app_reader_DjvuDocument_nativeOutline(JNIEnv *env, jclass, jlong contextVal
         ddjvu_miniexp_release(document, outline);
     }
     return makeOutlineResult(env, entries);
+}
+
+extern "C" JNIEXPORT jobjectArray JNICALL
+Java_app_reader_DjvuDocument_nativePageText(JNIEnv *env, jclass, jlong contextValue,
+                                            jlong documentValue, jint pageIndex) {
+    ddjvu_context_t *context = contextFrom(contextValue);
+    ddjvu_document_t *document = documentFrom(documentValue);
+    miniexp_t text;
+    while ((text = ddjvu_document_get_pagetext(document, pageIndex, "word")) == miniexp_dummy) {
+        if (drainMessages(env, context, true)) return nullptr;
+    }
+
+    std::vector<TextWord> words;
+    if (text != miniexp_nil) {
+        if (!miniexp_consp(text)) {
+            const char *status = miniexp_to_name(text);
+            throwRuntime(
+                    env,
+                    status
+                        ? std::string("Could not read DjVu page text: ") + status
+                        : "Could not read DjVu page text");
+            return nullptr;
+        }
+        appendTextWords(text, &words);
+        ddjvu_miniexp_release(document, text);
+    }
+    return makeTextResult(env, words);
 }
 
 extern "C" JNIEXPORT jintArray JNICALL

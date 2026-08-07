@@ -20,6 +20,34 @@ final class DjvuDocument implements Closeable {
         }
     }
 
+    static final class TextWord {
+        final String text;
+        final int left;
+        final int bottom;
+        final int right;
+        final int top;
+
+        private TextWord(String text, int left, int bottom, int right, int top) {
+            this.text = text;
+            this.left = left;
+            this.bottom = bottom;
+            this.right = right;
+            this.top = top;
+        }
+    }
+
+    static final class TextPage {
+        final int width;
+        final int height;
+        final List<TextWord> words;
+
+        private TextPage(int width, int height, List<TextWord> words) {
+            this.width = width;
+            this.height = height;
+            this.words = words;
+        }
+    }
+
     static {
         System.loadLibrary("reader_djvu");
     }
@@ -91,6 +119,45 @@ final class DjvuDocument implements Closeable {
         return roots;
     }
 
+    synchronized TextPage getPageText(int pageIndex) {
+        ensurePage(pageIndex);
+        int[] size = getPageSize(pageIndex);
+        Object[] pageText = nativePageText(context, document, pageIndex);
+        if (pageText == null
+                || pageText.length != 2
+                || !(pageText[0] instanceof byte[][])
+                || !(pageText[1] instanceof int[])) {
+            throw new IllegalStateException("DjVuLibre returned invalid page text");
+        }
+
+        byte[][] texts = (byte[][]) pageText[0];
+        int[] bounds = (int[]) pageText[1];
+        if (bounds.length != texts.length * 4) {
+            throw new IllegalStateException("DjVuLibre returned invalid page text");
+        }
+
+        List<TextWord> words = new ArrayList<>(texts.length);
+        for (int index = 0; index < texts.length; index++) {
+            int left = bounds[index * 4];
+            int bottom = bounds[(index * 4) + 1];
+            int right = bounds[(index * 4) + 2];
+            int top = bounds[(index * 4) + 3];
+            if (texts[index] == null
+                    || left < 0
+                    || bottom < 0
+                    || right <= left
+                    || top <= bottom
+                    || right > size[0]
+                    || top > size[1]) {
+                continue;
+            }
+            String text = new String(texts[index], StandardCharsets.UTF_8);
+            if (text.isBlank()) continue;
+            words.add(new TextWord(text, left, bottom, right, top));
+        }
+        return new TextPage(size[0], size[1], words);
+    }
+
 
     synchronized Bitmap renderPage(int pageIndex, int maximumWidth, int maximumHeight) {
         ensurePage(pageIndex);
@@ -135,6 +202,7 @@ final class DjvuDocument implements Closeable {
     private static native long[] nativeOpen(String path);
     private static native int[] nativePageSize(long context, long document, int pageIndex);
     private static native Object[] nativeOutline(long context, long document);
+    private static native Object[] nativePageText(long context, long document, int pageIndex);
     private static native boolean nativeRender(
             long context,
             long document,

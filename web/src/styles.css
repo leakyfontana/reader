@@ -382,14 +382,90 @@ body.reader-controls-hidden .reader-shell {
     touch-action: pan-y;
 }
 
-.djvu-page {
-    display: block;
-    max-width: 100%;
-    max-height: 100%;
-    object-fit: contain;
+.djvu-page-container {
+    position: relative;
+    flex: none;
+    overflow: hidden;
     background: #fff;
     box-shadow: 0 8px 28px rgb(0 0 0 / 22%);
+}
+
+.djvu-page {
+    display: block;
+    width: 100%;
+    height: 100%;
+    background: #fff;
+    pointer-events: none;
     user-select: none;
+}
+
+.djvu-text-layer {
+    position: absolute;
+    z-index: 0;
+    inset: 0;
+    overflow: clip;
+    color-scheme: only light;
+    forced-color-adjust: none;
+    line-height: 1;
+    text-align: initial;
+    text-size-adjust: none;
+    touch-action: auto;
+    transform-origin: 0 0;
+    user-select: text;
+    -webkit-text-size-adjust: none;
+    -webkit-user-select: text;
+}
+
+.djvu-text-flow {
+    position: absolute;
+    z-index: 1;
+    inset: 0;
+    box-sizing: border-box;
+    overflow: hidden;
+    line-height: 0;
+    cursor: text;
+    user-select: text;
+    -webkit-user-select: text;
+}
+
+.djvu-text-line {
+    position: static;
+    display: inline;
+    color: transparent;
+    font-family: serif;
+    vertical-align: top;
+    white-space: pre;
+    cursor: text;
+    user-select: text;
+    -webkit-text-fill-color: transparent;
+    -webkit-user-select: text;
+}
+
+.djvu-text-line-spacer {
+    position: static;
+    display: inline-block;
+    width: 0;
+    vertical-align: top;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.djvu-text-layer span::selection {
+    background: color-mix(in srgb, var(--accent) 38%, transparent);
+}
+
+.djvu-text-end {
+    position: absolute;
+    z-index: 0;
+    display: block;
+    inset: 100% 0 0;
+    cursor: default;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.djvu-text-layer.selecting .djvu-text-end {
+    top: 0;
 }
 
 :root[data-theme='dark'] .reader foliate-view.pdf::part(filter) {
@@ -602,6 +678,118 @@ body.reader-controls-hidden .reader-shell {
     width: 100%;
     accent-color: var(--accent);
 }
+
+.selection-lookup-button {
+    position: fixed;
+    z-index: 24;
+    bottom: max(72px, calc(64px + env(safe-area-inset-bottom)));
+    left: 50%;
+    max-width: min(420px, calc(100% - 32px));
+    min-height: 44px;
+    overflow: hidden;
+    box-shadow: var(--shadow);
+    text-overflow: ellipsis;
+    transform: translateX(-50%);
+    white-space: nowrap;
+}
+
+.dictionary-dialog {
+    width: min(560px, calc(100% - 24px));
+}
+
+.dictionary-dialog form {
+    display: grid;
+    max-height: min(78vh, 720px);
+    padding: 0;
+    grid-template-rows: auto minmax(0, 1fr);
+}
+
+.dictionary-dialog header {
+    align-items: flex-start;
+    margin: 0;
+    padding: 18px 18px 12px;
+}
+
+
+.dictionary-dialog #dictionary-word {
+    overflow-wrap: anywhere;
+}
+
+.dictionary-results {
+    min-height: 120px;
+    padding: 16px 18px 20px;
+    overflow-y: auto;
+    border-top: 1px solid var(--line);
+}
+
+.dictionary-loading,
+.dictionary-empty,
+.dictionary-error {
+    margin: 0;
+    color: var(--muted);
+    line-height: 1.5;
+}
+
+.dictionary-error {
+    color: #b65347;
+}
+
+.dictionary-entry + .dictionary-entry {
+    margin-top: 24px;
+    padding-top: 20px;
+    border-top: 1px solid var(--line);
+}
+
+.dictionary-entry h3 {
+    margin: 0;
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: 1.2rem;
+    overflow-wrap: anywhere;
+}
+
+.dictionary-pronunciation {
+    margin: 4px 0 14px;
+    color: var(--muted);
+    font-size: 0.82rem;
+}
+
+.dictionary-part + .dictionary-part {
+    margin-top: 18px;
+}
+
+.dictionary-part h4 {
+    margin: 0 0 8px;
+    color: var(--accent);
+    font-size: 0.75rem;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+}
+
+.dictionary-senses {
+    display: grid;
+    margin: 0;
+    padding-left: 22px;
+    gap: 14px;
+}
+
+.dictionary-definition,
+.dictionary-example,
+.dictionary-synonyms {
+    margin: 0;
+    line-height: 1.45;
+}
+
+.dictionary-example,
+.dictionary-synonyms {
+    margin-top: 5px;
+    color: var(--muted);
+    font-size: 0.82rem;
+}
+
+.dictionary-example {
+    font-style: italic;
+}
+
 
 .status {
     position: fixed;
