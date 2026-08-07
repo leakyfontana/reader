@@ -21,6 +21,7 @@ import android.webkit.WebViewClient;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowInsets;
+import android.view.WindowManager;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -117,6 +118,11 @@ public final class MainActivity extends Activity {
     @SuppressWarnings("deprecation")
     private void setReaderMode(boolean enabled) {
         readerMode = enabled;
+        if (enabled) {
+            getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        } else {
+            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             android.view.WindowInsetsController controller = getWindow().getInsetsController();
             if (controller != null) {
