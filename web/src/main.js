@@ -15,6 +15,7 @@ const SUPPORTED_EXTENSIONS = [
     '.fb2', '.fbz', '.fb2.zip', '.cbz',
     '.txt', '.text', '.md', '.html', '.htm', '.xhtml',
 ]
+const THEME_CYCLE = ['light', 'dark', 'night']
 const PREFERENCE_KEY = 'reader.preferences.v1'
 const defaults = {
     theme: 'system',
@@ -41,6 +42,7 @@ const elements = {
     chapterList: $('#chapter-list'),
     status: $('#status'),
     settings: $('#settings-dialog'),
+    themeButton: $('#theme-button'),
     themeSelect: $('#theme-select'),
     fontSelect: $('#font-select'),
     fontSizeInput: $('#font-size-input'),
@@ -111,6 +113,11 @@ function resolvedTheme() {
     return matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
 }
 
+function nextTheme(theme) {
+    const index = THEME_CYCLE.indexOf(theme)
+    return THEME_CYCLE[(index + 1) % THEME_CYCLE.length]
+}
+
 function fontFamily() {
     return {
         serif: "Georgia, 'Times New Roman', serif",
@@ -156,6 +163,9 @@ function applyPreferences() {
     document.querySelector('meta[name="color-scheme"]').content = theme === 'light' ? 'light' : 'dark'
 
     elements.themeSelect.value = preferences.theme
+    const upcomingTheme = nextTheme(theme)
+    elements.themeButton.title = `Switch to ${upcomingTheme} theme`
+    elements.themeButton.setAttribute('aria-label', `Switch to ${upcomingTheme} theme`)
     elements.fontSelect.value = preferences.font
     elements.fontSizeInput.value = String(preferences.fontSize)
     elements.fontSizeOutput.value = `${preferences.fontSize}%`
@@ -442,8 +452,9 @@ function createChapterList(items) {
         button.className = 'chapter-link'
         button.type = 'button'
         button.textContent = displayText(item.label) || 'Untitled chapter'
-        button.disabled = !item.href
-        if (item.href) {
+        const hasLocation = item.href != null
+        button.disabled = !hasLocation
+        if (hasLocation) {
             button.dataset.href = String(item.href)
             button.addEventListener('click', async () => {
                 try {
@@ -563,6 +574,8 @@ function makeSimpleBook(parts, title, sourceSize) {
     return {
         metadata: { title },
         sections,
+        splitTOCHref: href => [Number(href), null],
+        getTOCFragment: document => document.documentElement,
         isExternal: href => /^https?:|^mailto:/i.test(href),
         destroy: () => sections.forEach(section => section.unload()),
     }
@@ -599,6 +612,26 @@ async function openDjvuBook(file, addToLibrary, initialProgress) {
     if (info.error) throw new Error(info.error)
     if (!Number.isInteger(info.pageCount) || info.pageCount < 1) {
         throw new Error('The DjVu document has no readable pages')
+    }
+
+    const toc = Array.isArray(info.toc) ? info.toc : []
+    const tocLocations = []
+    const collectTocLocations = items => {
+        for (const item of items) {
+            const page = Number(item.href)
+            if (Number.isInteger(page)) tocLocations.push({ item, page })
+            if (Array.isArray(item.subitems)) collectTocLocations(item.subitems)
+        }
+    }
+    collectTocLocations(toc)
+    tocLocations.sort((left, right) => left.page - right.page)
+    const tocItemAt = index => {
+        let current = null
+        for (const location of tocLocations) {
+            if (location.page > index) break
+            current = location.item
+        }
+        return current
     }
 
     const view = document.createElement('div')
@@ -720,6 +753,7 @@ async function openDjvuBook(file, addToLibrary, initialProgress) {
             detail: {
                 fraction,
                 pageItem: { label: `${pageIndex + 1} of ${info.pageCount}` },
+                tocItem: tocItemAt(pageIndex),
             },
         })
         void preRenderAround(pageIndex, direction)
@@ -727,6 +761,13 @@ async function openDjvuBook(file, addToLibrary, initialProgress) {
     const navigate = index => renderPage(index).catch(error => showStatus(error.message, true))
     view.goLeft = () => navigate(pageIndex - 1)
     view.goRight = () => navigate(pageIndex + 1)
+    view.goTo = target => {
+        const index = Number(target)
+        if (!Number.isInteger(index)) {
+            return Promise.reject(new Error('This DjVu chapter has no page destination'))
+        }
+        return renderPage(index)
+    }
     view.goToFraction = fraction => renderPage(Math.round(
         Math.max(0, Math.min(1, fraction)) * (info.pageCount - 1),
     ))
@@ -775,7 +816,7 @@ async function openDjvuBook(file, addToLibrary, initialProgress) {
     const title = titleFromFile(file.name)
     view.book = {
         metadata: { title },
-        toc: [],
+        toc,
         destroy: () => {
             destroyed = true
             renderRequest += 1
@@ -792,7 +833,7 @@ async function openDjvuBook(file, addToLibrary, initialProgress) {
     await renderPage(initialPage)
     const adjacentPage = initialPage < info.pageCount - 1 ? initialPage + 1 : initialPage - 1
     if (adjacentPage >= 0) await loadPage(adjacentPage)
-    renderChapters([])
+    renderChapters(toc)
 
     let cover = null
     if (addToLibrary) {
@@ -857,6 +898,13 @@ async function closeCurrentBook() {
     currentProgressFraction = 0
 }
 
+function goToReadingFraction(view, fraction) {
+    const clamped = Math.max(0, Math.min(1, fraction))
+    const sectionCount = view?.isFixedLayout ? view.book?.sections?.length : 0
+    if (sectionCount) return view.goTo(Math.round(clamped * (sectionCount - 1)))
+    return view?.goToFraction(clamped)
+}
+
 async function openBook(file, { addToLibrary = true, initialProgress = null } = {}) {
     if (!file) return
     if (!isSupported(file)) {
@@ -909,7 +957,7 @@ async function openBook(file, { addToLibrary = true, initialProgress = null } = 
         setNativeReaderMode(true)
         applyPreferences()
         await view.renderer.next()
-        if (resumeProgress > 0) await view.goToFraction(resumeProgress)
+        if (resumeProgress > 0) await goToReadingFraction(view, resumeProgress)
 
         renderChapters(view.book?.toc)
         const metadata = view.book?.metadata || {}
@@ -964,12 +1012,21 @@ function readableError(error) {
 }
 
 function updateLocation({ detail }) {
-    const fraction = Number.isFinite(detail.fraction) ? detail.fraction : 0
+    const sectionIndex = detail.section?.current
+    const sectionCount = detail.section?.total
+    const fixedLayoutLocation = readerView?.isFixedLayout
+        && Number.isInteger(sectionIndex)
+        && Number.isInteger(sectionCount)
+        && sectionCount > 0
+    const fraction = fixedLayoutLocation
+        ? (sectionCount === 1 ? 0 : sectionIndex / (sectionCount - 1))
+        : (Number.isFinite(detail.fraction) ? detail.fraction : 0)
     elements.progressSlider.value = String(fraction)
     currentProgressFraction = fraction
     scheduleBookProgress(fraction)
     const percent = Math.max(0, Math.min(100, Math.round(fraction * 100)))
-    const page = detail.pageItem?.label || detail.location?.current
+    const fixedPage = fixedLayoutLocation ? `${sectionIndex + 1} of ${sectionCount}` : null
+    const page = detail.pageItem?.label || fixedPage || detail.location?.current
     elements.progressText.textContent = page ? `${percent}% · Page ${page}` : `${percent}% read`
     const currentHref = detail.tocItem?.href
     for (const button of elements.chapterList.querySelectorAll('[data-href]')) {
@@ -1010,12 +1067,17 @@ elements.settings.addEventListener('click', event => {
 $('#chapters-button').addEventListener('click', () => {
     if (!elements.chaptersButton.disabled) elements.chaptersDialog.showModal()
 })
-$('#theme-button').addEventListener('click', () => {
-    updatePreference('theme', resolvedTheme() === 'dark' ? 'light' : 'dark')
+elements.themeButton.addEventListener('click', () => {
+    updatePreference('theme', nextTheme(resolvedTheme()))
 })
 
+const navigateToSliderPosition = event =>
+    goToReadingFraction(readerView, Number(event.target.value))?.catch(console.error)
 elements.progressSlider.addEventListener('input', event => {
-    readerView?.goToFraction(Number(event.target.value)).catch(console.error)
+    if (currentKind !== 'djvu') navigateToSliderPosition(event)
+})
+elements.progressSlider.addEventListener('change', event => {
+    if (currentKind === 'djvu') navigateToSliderPosition(event)
 })
 elements.fileInput.addEventListener('change', event => {
     openBook(event.target.files?.[0])

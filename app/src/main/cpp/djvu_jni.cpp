@@ -5,8 +5,10 @@
 #include <cstdint>
 #include <string>
 #include <unistd.h>
+#include <vector>
 
 #include "ddjvuapi.h"
+#include "miniexp.h"
 
 namespace {
 constexpr const char *TAG = "ReaderDjVu";
@@ -80,6 +82,69 @@ inline ddjvu_context_t *contextFrom(jlong value) {
 inline ddjvu_document_t *documentFrom(jlong value) {
     return reinterpret_cast<ddjvu_document_t *>(static_cast<intptr_t>(value));
 }
+struct OutlineEntry {
+    std::string label;
+    int depth;
+    int pageIndex;
+};
+
+int outlinePage(ddjvu_document_t *document, const char *url) {
+    if (!url || !*url) return -1;
+    const char *target = url[0] == '#' ? url + 1 : url;
+    if (!*target) return -1;
+    return ddjvu_document_search_pageno(document, target);
+}
+
+void appendOutlineEntries(ddjvu_document_t *document, miniexp_t items, int depth,
+                          std::vector<OutlineEntry> *entries) {
+    while (miniexp_consp(items)) {
+        miniexp_t item = miniexp_car(items);
+        miniexp_t label = miniexp_nth(0, item);
+        miniexp_t url = miniexp_nth(1, item);
+        const char *labelText = miniexp_to_str(label);
+        const char *urlText = miniexp_to_str(url);
+        if (labelText && urlText) {
+            entries->push_back({labelText, depth, outlinePage(document, urlText)});
+            appendOutlineEntries(document, miniexp_cddr(item), depth + 1, entries);
+        }
+        items = miniexp_cdr(items);
+    }
+}
+
+jobjectArray makeOutlineResult(JNIEnv *env, const std::vector<OutlineEntry> &entries) {
+    jclass objectClass = env->FindClass("java/lang/Object");
+    jclass byteArrayClass = env->FindClass("[B");
+    if (!objectClass || !byteArrayClass) return nullptr;
+
+    const jsize count = static_cast<jsize>(entries.size());
+    jobjectArray result = env->NewObjectArray(2, objectClass, nullptr);
+    jobjectArray labels = env->NewObjectArray(count, byteArrayClass, nullptr);
+    jintArray locations = env->NewIntArray(count * 2);
+    if (!result || !labels || !locations) return nullptr;
+
+    std::vector<jint> locationValues(entries.size() * 2);
+    for (jsize index = 0; index < count; index++) {
+        const OutlineEntry &entry = entries[index];
+        jbyteArray label = env->NewByteArray(static_cast<jsize>(entry.label.size()));
+        if (!label) return nullptr;
+        env->SetByteArrayRegion(
+                label,
+                0,
+                static_cast<jsize>(entry.label.size()),
+                reinterpret_cast<const jbyte *>(entry.label.data()));
+        env->SetObjectArrayElement(labels, index, label);
+        env->DeleteLocalRef(label);
+        locationValues[index * 2] = entry.depth;
+        locationValues[(index * 2) + 1] = entry.pageIndex;
+    }
+    env->SetIntArrayRegion(locations, 0, count * 2, locationValues.data());
+    env->SetObjectArrayElement(result, 0, labels);
+    env->SetObjectArrayElement(result, 1, locations);
+    env->DeleteLocalRef(labels);
+    env->DeleteLocalRef(locations);
+    return result;
+}
+
 }  // namespace
 
 extern "C" JNIEXPORT jlongArray JNICALL
@@ -119,6 +184,30 @@ Java_app_reader_DjvuDocument_nativeOpen(JNIEnv *env, jclass, jstring path) {
     jlongArray result = env->NewLongArray(3);
     if (result) env->SetLongArrayRegion(result, 0, 3, values);
     return result;
+}
+
+extern "C" JNIEXPORT jobjectArray JNICALL
+Java_app_reader_DjvuDocument_nativeOutline(JNIEnv *env, jclass, jlong contextValue,
+                                            jlong documentValue) {
+    ddjvu_context_t *context = contextFrom(contextValue);
+    ddjvu_document_t *document = documentFrom(documentValue);
+    miniexp_t outline;
+    while ((outline = ddjvu_document_get_outline(document)) == miniexp_dummy) {
+        if (drainMessages(env, context, true)) return nullptr;
+    }
+
+    std::vector<OutlineEntry> entries;
+    if (outline != miniexp_nil) {
+        const char *root = miniexp_to_name(miniexp_car(outline));
+        if (!root || std::string(root) != "bookmarks") {
+            ddjvu_miniexp_release(document, outline);
+            throwRuntime(env, "Could not read the DjVu document outline");
+            return nullptr;
+        }
+        appendOutlineEntries(document, miniexp_cdr(outline), 0, &entries);
+        ddjvu_miniexp_release(document, outline);
+    }
+    return makeOutlineResult(env, entries);
 }
 
 extern "C" JNIEXPORT jintArray JNICALL
