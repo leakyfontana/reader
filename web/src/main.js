@@ -32,10 +32,13 @@ const elements = {
     libraryGrid: $('#library-grid'),
     openButton: $('#open-button'),
     readerShell: $('#reader-shell'),
+    readerNav: $('.reader-nav'),
     reader: $('#reader'),
     fileInput: $('#file-input'),
     title: $('#book-title'),
     progressText: $('#book-progress'),
+    progressControl: $('#progress-control'),
+    progressTooltip: $('#progress-tooltip'),
     progressSlider: $('#progress-slider'),
     chaptersButton: $('#chapters-button'),
     chaptersDialog: $('#chapters-dialog'),
@@ -66,6 +69,8 @@ let pendingBookProgress = null
 let progressSaveTimer = null
 let progressSavePromise = Promise.resolve()
 let currentProgressFraction = 0
+let sliderLocationTotal = 0
+let sliderTooltipTimer = null
 
 function scheduleBookProgress(fraction) {
     if (!currentBookId || !currentBookStored || !Number.isFinite(fraction)) return
@@ -474,9 +479,12 @@ function createChapterList(items) {
 
 function renderChapters(toc) {
     const chapters = Array.isArray(toc) ? toc : []
-    elements.chaptersButton.disabled = chapters.length === 0
+    const hasChapters = chapters.length > 0
+    elements.chaptersButton.hidden = !hasChapters
+    elements.chaptersButton.disabled = !hasChapters
+    elements.readerNav.classList.toggle('chapters-unavailable', !hasChapters)
     elements.chapterList.replaceChildren(
-        ...(chapters.length ? [createChapterList(chapters)] : []),
+        ...(hasChapters ? [createChapterList(chapters)] : []),
     )
 }
 
@@ -771,6 +779,10 @@ async function openDjvuBook(file, addToLibrary, initialProgress) {
     view.goToFraction = fraction => renderPage(Math.round(
         Math.max(0, Math.min(1, fraction)) * (info.pageCount - 1),
     ))
+    view.progressLabelForFraction = fraction => {
+        const index = Math.round(Math.max(0, Math.min(1, fraction)) * (info.pageCount - 1))
+        return `Page ${index + 1} of ${info.pageCount}`
+    }
 
     const onResize = () => {
         clearTimeout(resizeTimer)
@@ -896,6 +908,11 @@ async function closeCurrentBook() {
     currentBookId = null
     currentBookStored = false
     currentProgressFraction = 0
+    sliderLocationTotal = 0
+    clearTimeout(sliderTooltipTimer)
+    sliderTooltipTimer = null
+    elements.progressTooltip.hidden = true
+    elements.progressSlider.removeAttribute('aria-valuetext')
 }
 
 function goToReadingFraction(view, fraction) {
@@ -903,6 +920,47 @@ function goToReadingFraction(view, fraction) {
     const sectionCount = view?.isFixedLayout ? view.book?.sections?.length : 0
     if (sectionCount) return view.goTo(Math.round(clamped * (sectionCount - 1)))
     return view?.goToFraction(clamped)
+}
+
+function sliderPositionLabel(fraction) {
+    const clamped = Math.max(0, Math.min(1, fraction))
+    const customLabel = readerView?.progressLabelForFraction?.(clamped)
+    if (customLabel) return customLabel
+
+    const pageCount = readerView?.isFixedLayout ? readerView.book?.sections?.length : 0
+    if (pageCount) {
+        const page = Math.round(clamped * (pageCount - 1)) + 1
+        return `Page ${page} of ${pageCount}`
+    }
+
+    if (sliderLocationTotal > 0) {
+        const location = Math.round(clamped * (sliderLocationTotal - 1)) + 1
+        return `Location ${location} of ${sliderLocationTotal}`
+    }
+    return `${Math.round(clamped * 100)}%`
+}
+
+function updateSliderTooltip(fraction, show = !elements.progressTooltip.hidden) {
+    const clamped = Math.max(0, Math.min(1, fraction))
+    const label = sliderPositionLabel(clamped)
+    elements.progressControl.style.setProperty('--slider-position', `${5 + clamped * 90}%`)
+    elements.progressTooltip.textContent = label
+    elements.progressTooltip.hidden = !show
+    elements.progressSlider.setAttribute('aria-valuetext', label)
+}
+
+function showSliderTooltip(fraction) {
+    clearTimeout(sliderTooltipTimer)
+    sliderTooltipTimer = null
+    updateSliderTooltip(fraction, true)
+}
+
+function hideSliderTooltip(delay = 0) {
+    clearTimeout(sliderTooltipTimer)
+    sliderTooltipTimer = setTimeout(() => {
+        sliderTooltipTimer = null
+        elements.progressTooltip.hidden = true
+    }, delay)
 }
 
 async function openBook(file, { addToLibrary = true, initialProgress = null } = {}) {
@@ -1022,12 +1080,15 @@ function updateLocation({ detail }) {
         ? (sectionCount === 1 ? 0 : sectionIndex / (sectionCount - 1))
         : (Number.isFinite(detail.fraction) ? detail.fraction : 0)
     elements.progressSlider.value = String(fraction)
+    const locationTotal = detail.location?.total
+    sliderLocationTotal = Number.isInteger(locationTotal) && locationTotal > 0 ? locationTotal : 0
     currentProgressFraction = fraction
     scheduleBookProgress(fraction)
     const percent = Math.max(0, Math.min(100, Math.round(fraction * 100)))
     const fixedPage = fixedLayoutLocation ? `${sectionIndex + 1} of ${sectionCount}` : null
     const page = detail.pageItem?.label || fixedPage || detail.location?.current
     elements.progressText.textContent = page ? `${percent}% · Page ${page}` : `${percent}% read`
+    updateSliderTooltip(fraction)
     const currentHref = detail.tocItem?.href
     for (const button of elements.chapterList.querySelectorAll('[data-href]')) {
         if (currentHref != null && button.dataset.href === String(currentHref)) {
@@ -1071,14 +1132,27 @@ elements.themeButton.addEventListener('click', () => {
     updatePreference('theme', nextTheme(resolvedTheme()))
 })
 
+const sliderFraction = event => Number(event.target.value)
 const navigateToSliderPosition = event =>
-    goToReadingFraction(readerView, Number(event.target.value))?.catch(console.error)
+    goToReadingFraction(readerView, sliderFraction(event))?.catch(console.error)
+elements.progressSlider.addEventListener('focus', event => {
+    showSliderTooltip(sliderFraction(event))
+})
+elements.progressSlider.addEventListener('pointerdown', event => {
+    showSliderTooltip(sliderFraction(event))
+})
 elements.progressSlider.addEventListener('input', event => {
+    showSliderTooltip(sliderFraction(event))
     if (currentKind !== 'djvu') navigateToSliderPosition(event)
 })
 elements.progressSlider.addEventListener('change', event => {
+    showSliderTooltip(sliderFraction(event))
     if (currentKind === 'djvu') navigateToSliderPosition(event)
+    hideSliderTooltip(1400)
 })
+elements.progressSlider.addEventListener('pointerup', () => hideSliderTooltip(1400))
+elements.progressSlider.addEventListener('pointercancel', () => hideSliderTooltip())
+elements.progressSlider.addEventListener('blur', () => hideSliderTooltip())
 elements.fileInput.addEventListener('change', event => {
     openBook(event.target.files?.[0])
     event.target.value = ''

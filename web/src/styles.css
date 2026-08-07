@@ -417,9 +417,37 @@ body.reader-controls-hidden .reader-shell {
     background: var(--surface);
 }
 
+.reader-nav.chapters-unavailable {
+    grid-template-columns: 52px minmax(0, 1fr) 52px;
+}
+
+.progress-control {
+    position: relative;
+    min-width: 0;
+}
+
 #progress-slider {
     width: 100%;
     accent-color: var(--accent);
+}
+
+.progress-tooltip {
+    position: absolute;
+    z-index: 2;
+    bottom: calc(100% + 7px);
+    left: var(--slider-position, 5%);
+    padding: 5px 8px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--surface-strong);
+    box-shadow: 0 4px 14px rgb(4 15 15 / 20%);
+    color: var(--ink);
+    font-size: 0.78rem;
+    font-weight: 700;
+    line-height: 1;
+    pointer-events: none;
+    transform: translateX(-50%);
+    white-space: nowrap;
 }
 
 .chapters-button:disabled {
