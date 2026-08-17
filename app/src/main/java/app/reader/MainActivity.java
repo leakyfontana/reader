@@ -60,11 +60,14 @@ public final class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            getWindow().getAttributes().layoutInDisplayCutoutMode =
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS;
+        }
 
         webView = new WebView(this);
         setContentView(webView);
         applySystemBarInsets();
-
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
@@ -84,24 +87,25 @@ public final class MainActivity extends Activity {
     @SuppressWarnings("deprecation")
     private void applySystemBarInsets() {
         webView.setOnApplyWindowInsetsListener((view, windowInsets) -> {
-            int left;
-            int top;
-            int right;
-            int bottom;
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                android.graphics.Insets insets = windowInsets.getInsets(
-                        WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
-                left = insets.left;
-                top = insets.top;
-                right = insets.right;
-                bottom = insets.bottom;
-            } else {
-                left = windowInsets.getSystemWindowInsetLeft();
-                top = windowInsets.getSystemWindowInsetTop();
-                right = windowInsets.getSystemWindowInsetRight();
-                bottom = windowInsets.getSystemWindowInsetBottom();
+            int left = 0;
+            int top = 0;
+            int right = 0;
+            int bottom = 0;
+            if (!readerMode) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    android.graphics.Insets insets = windowInsets.getInsets(
+                            WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
+                    left = insets.left;
+                    top = insets.top;
+                    right = insets.right;
+                    bottom = insets.bottom;
+                } else {
+                    left = windowInsets.getSystemWindowInsetLeft();
+                    top = windowInsets.getSystemWindowInsetTop();
+                    right = windowInsets.getSystemWindowInsetRight();
+                    bottom = windowInsets.getSystemWindowInsetBottom();
+                }
             }
-
             ViewGroup.MarginLayoutParams layout = (ViewGroup.MarginLayoutParams) view.getLayoutParams();
             if (layout.leftMargin != left
                     || layout.topMargin != top
