@@ -123,6 +123,19 @@
                 <div id="dictionary-results" class="dictionary-results" aria-live="polite"></div>
             </form>
         </dialog>
+        <dialog id="completion-dialog" class="settings-dialog completion-dialog" aria-labelledby="completion-dialog-title">
+            <form method="dialog">
+                <header>
+                    <h2 id="completion-dialog-title">Finished Reading?</h2>
+                    <button class="icon-button" type="button" aria-label="Close" title="Close" onclick="this.closest('dialog').close()">×</button>
+                </header>
+                <p id="completion-dialog-text">You have reached the end of the book. Would you like to mark it as finished?</p>
+                <div class="dialog-actions">
+                    <button id="completion-confirm-button" class="primary-button" type="button">Mark as Finished</button>
+                    <button id="completion-dismiss-button" class="secondary-button" type="button">Not Yet</button>
+                </div>
+            </form>
+        </dialog>
 
         <div id="status" class="status" role="status" aria-live="polite" hidden></div>
     </main>

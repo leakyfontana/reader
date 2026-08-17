@@ -7,6 +7,7 @@ import {
     persistStorage,
     saveBook,
     saveBookCover,
+    saveBookFinished,
     saveBookProgress,
 } from './library.js'
 import { lookupDictionary, lookupTermFromSelection } from './dictionary.js'
@@ -58,8 +59,12 @@ const elements = {
     lineHeightInput: $('#line-height-input'),
     lineHeightOutput: $('#line-height-output'),
     hideControlsInput: $('#hide-controls-input'),
+    completionDialog: $('#completion-dialog'),
+    completionConfirmButton: $('#completion-confirm-button'),
+    completionDismissButton: $('#completion-dismiss-button'),
 }
 
+const completedPromptedBooks = new Set()
 let preferences = loadPreferences()
 let readerView = null
 let currentKind = null
@@ -506,7 +511,7 @@ function createBookCard(book) {
         .filter(Boolean)
         .join(' · ')
     const progress = Math.max(0, Math.min(1, Number(book.progress) || 0))
-    const finished = book.finished === true || progress >= 0.999
+    const finished = book.finished === true
     const percentage = finished ? 100 : Math.min(99, Math.floor(progress * 100))
     const progressText = document.createElement('span')
     progressText.className = 'library-book-progress-text'
@@ -1486,12 +1491,17 @@ function updateLocation({ detail }) {
     sliderLocationTotal = Number.isInteger(locationTotal) && locationTotal > 0 ? locationTotal : 0
     currentProgressFraction = fraction
     scheduleBookProgress(fraction)
+    const isAtEnd = fraction >= 0.99
+    if (isAtEnd && currentBookId && currentBookStored && !completedPromptedBooks.has(currentBookId)) {
+        const record = libraryBooks.find(book => book.id === currentBookId)
+        if (record && !record.finished) {
+            completedPromptedBooks.add(currentBookId)
+            elements.completionDialog?.showModal()
+        }
+    }
     const percent = Math.max(0, Math.min(100, Math.round(fraction * 100)))
     const fixedPage = fixedLayoutLocation ? `${sectionIndex + 1} of ${sectionCount}` : null
     const page = detail.pageItem?.label || fixedPage || detail.location?.current
-    elements.progressText.textContent = page ? `${percent}% · Page ${page}` : `${percent}% read`
-    updateSliderTooltip(fraction)
-    const currentHref = detail.tocItem?.href
     for (const button of elements.chapterList.querySelectorAll('[data-href]')) {
         if (currentHref != null && button.dataset.href === String(currentHref)) {
             button.setAttribute('aria-current', 'location')
@@ -1544,6 +1554,19 @@ elements.dictionaryDialog.addEventListener('close', () => {
     dictionaryRequest += 1
     dictionaryLookupText = ''
     clearSelectionLookup(true)
+})
+elements.completionConfirmButton?.addEventListener('click', async () => {
+    elements.completionDialog?.close()
+    if (currentBookId) {
+        await saveBookFinished(currentBookId, true)
+        const record = libraryBooks.find(b => b.id === currentBookId)
+        if (record) record.finished = true
+        showStatus('Marked book as finished! 🎉', false, 2500)
+        await renderLibrary({ hydrateCovers: false })
+    }
+})
+elements.completionDismissButton?.addEventListener('click', () => {
+    elements.completionDialog?.close()
 })
 elements.themeButton.addEventListener('click', () => {
     updatePreference('theme', nextTheme(resolvedTheme()))
