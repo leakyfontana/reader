@@ -274,7 +274,7 @@ function updateSelectionLookup(doc) {
         : rangeContainer?.parentElement
     const insideReaderText = doc !== document || Boolean(rangeElement?.closest('.djvu-text-layer'))
     const text = selection && !selection.isCollapsed && insideReaderText
-        ? selection.toString().replace(/\s+/g, ' ').trim()
+        ? selection.toString().replace(/(\p{L})-\s+(\p{L})/gu, '$1$2').replace(/\s+/g, ' ').trim()
         : ''
     const term = lookupTermFromSelection(text)
     if (!term) {

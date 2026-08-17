@@ -446,8 +446,7 @@ body.reader-controls-hidden .reader-shell {
     display: inline-block;
     width: 0;
     vertical-align: top;
-    user-select: none;
-    -webkit-user-select: none;
+    pointer-events: none;
 }
 
 .djvu-text-layer span::selection {
