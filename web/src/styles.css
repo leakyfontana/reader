@@ -85,6 +85,7 @@ input:focus-visible {
     background: color-mix(in srgb, var(--surface), transparent 4%);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
+    transition: opacity 0.18s ease, transform 0.18s ease, visibility 0.18s;
 }
 
 body:has(#reader-shell:not([hidden])) .app-bar,
@@ -94,7 +95,6 @@ body.in-reader .app-bar {
     left: 0;
     right: 0;
 }
-
 .title-group {
     display: flex;
     min-width: 0;
@@ -363,11 +363,19 @@ body.in-reader .app-bar {
     display: block;
 }
 
-body.reader-controls-hidden .app-bar,
-body.reader-controls-hidden .reader-nav {
-    display: none;
+body.reader-controls-hidden .app-bar {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(-100%);
+    visibility: hidden;
 }
 
+body.reader-controls-hidden .reader-nav {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(100%);
+    visibility: hidden;
+}
 .reader {
     position: relative;
     width: 100%;
@@ -500,16 +508,17 @@ body.reader-controls-hidden .reader-nav {
     right: 0;
     z-index: 10;
     display: grid;
-    grid-template-columns: 52px 44px minmax(0, 1fr) 52px;
+    grid-template-columns: 52px 44px minmax(0, 1fr) 44px 52px;
     align-items: center;
     padding: 4px 8px max(4px, env(safe-area-inset-bottom));
     border-top: 1px solid var(--line);
     background: color-mix(in srgb, var(--surface), transparent 4%);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
+    transition: opacity 0.18s ease, transform 0.18s ease, visibility 0.18s;
 }
 .reader-nav.chapters-unavailable {
-    grid-template-columns: 52px minmax(0, 1fr) 52px;
+    grid-template-columns: 52px minmax(0, 1fr) 44px 52px;
 }
 
 .progress-control {

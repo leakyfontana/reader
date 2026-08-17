@@ -50,6 +50,8 @@ const elements = {
     dictionaryResults: $('#dictionary-results'),
     status: $('#status'),
     settings: $('#settings-dialog'),
+    settingsButton: $('#settings-button'),
+    readerSettingsButton: $('#reader-settings-button'),
     themeButton: $('#theme-button'),
     themeSelect: $('#theme-select'),
     fontSelect: $('#font-select'),
@@ -199,8 +201,8 @@ function applyPreferences() {
 }
 
 function applyReaderControlVisibility() {
-    const hidden = Boolean(readerView && preferences.hideControls && !readerControlsVisible)
-    document.body.classList.toggle('reader-controls-hidden', hidden)
+    if (!readerView) return
+    document.body.classList.toggle('reader-controls-hidden', !readerControlsVisible)
 }
 
 function setNativeReaderMode(enabled) {
@@ -208,10 +210,11 @@ function setNativeReaderMode(enabled) {
 }
 
 function toggleReaderControls(event) {
-    if (!preferences.hideControls || event.defaultPrevented) return
-    if (event.target?.closest?.('a, button, input, select, textarea, label')) return
-    const selection = event.currentTarget.getSelection?.()
-        ?? event.currentTarget.ownerDocument?.getSelection?.()
+    if (event.defaultPrevented) return
+    if (event.target?.closest?.('a, button, input, select, textarea, label, dialog')) return
+    const selection = event.currentTarget?.getSelection?.()
+        ?? event.currentTarget?.ownerDocument?.getSelection?.()
+        ?? window.getSelection()
     if (selection && !selection.isCollapsed) return
     readerControlsVisible = !readerControlsVisible
     applyReaderControlVisibility()
@@ -1522,8 +1525,8 @@ $('#library-empty-button').addEventListener('click', chooseBook)
 $('#previous-button').addEventListener('click', () => readerView?.goLeft())
 $('#next-button').addEventListener('click', () => readerView?.goRight())
 $('#settings-button').addEventListener('click', () => elements.settings.showModal())
+elements.readerSettingsButton?.addEventListener('click', () => elements.settings.showModal())
 elements.settings.addEventListener('click', event => {
-    if (event.target !== elements.settings) return
     const bounds = elements.settings.getBoundingClientRect()
     const outside = event.clientX < bounds.left
         || event.clientX > bounds.right
