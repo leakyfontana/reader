@@ -162,6 +162,11 @@ function bookStyles() {
         body {
             background: ${palette.background} !important;
             color: ${palette.ink} !important;
+            padding-top: max(8px, env(safe-area-inset-top, 8px)) !important;
+            padding-bottom: max(12px, env(safe-area-inset-bottom, 12px)) !important;
+            padding-left: max(16px, env(safe-area-inset-left, 16px)) !important;
+            padding-right: max(16px, env(safe-area-inset-right, 16px)) !important;
+            box-sizing: border-box !important;
         }
         body, p, li, blockquote, dd {
             line-height: ${preferences.lineHeight} !important;

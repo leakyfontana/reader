@@ -380,6 +380,8 @@ body.reader-controls-hidden .reader-shell {
     overflow: hidden;
     place-items: center;
     touch-action: pan-y;
+    padding: max(4px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(4px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+    box-sizing: border-box;
 }
 
 .djvu-page-container {
