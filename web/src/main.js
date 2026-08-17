@@ -31,8 +31,8 @@ const elements = {
     library: $('#library'),
     libraryEmpty: $('#library-empty'),
     libraryGrid: $('#library-grid'),
+    streakBadge: $('#streak-badge'),
     openButton: $('#open-button'),
-    readerShell: $('#reader-shell'),
     readerNav: $('.reader-nav'),
     reader: $('#reader'),
     fileInput: $('#file-input'),
@@ -82,6 +82,94 @@ let selectedLookupText = ''
 let selectedLookupTerm = ''
 let dictionaryLookupText = ''
 let dictionaryRequest = 0
+const STREAK_STORAGE_KEY = 'reader.streak.v1'
+let readingSessionTimer = null
+let sessionMinutes = 0
+
+function loadStreakData() {
+    try {
+        const stored = JSON.parse(localStorage.getItem(STREAK_STORAGE_KEY))
+        if (stored && typeof stored === 'object') return stored
+    } catch {
+        // use default
+    }
+    return {
+        streak: 0,
+        lastReadDate: '',
+        todayMinutes: 0,
+        totalMinutes: 0,
+    }
+}
+
+function saveStreakData(data) {
+    try {
+        localStorage.setItem(STREAK_STORAGE_KEY, JSON.stringify(data))
+    } catch (error) {
+        console.warn('Could not save streak data', error)
+    }
+}
+
+function todayDateString() {
+    const date = new Date()
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+function updateReadingStreak(activeMinutes = 1) {
+    const data = loadStreakData()
+    const today = todayDateString()
+    const yesterday = new Date(Date.now() - 86400000)
+    const yesterdayStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`
+
+    if (data.lastReadDate === today) {
+        data.todayMinutes += activeMinutes
+    } else {
+        if (data.lastReadDate === yesterdayStr) {
+            data.streak += 1
+        } else if (data.lastReadDate !== today) {
+            data.streak = 1
+        }
+        data.lastReadDate = today
+        data.todayMinutes = activeMinutes
+    }
+    data.totalMinutes += activeMinutes
+    saveStreakData(data)
+    updateStreakDisplay()
+    return data
+}
+
+function updateStreakDisplay() {
+    const data = loadStreakData()
+    if (!elements.streakBadge) return
+    const days = data.streak || (data.lastReadDate === todayDateString() ? 1 : 0)
+    const dayLabel = days === 1 ? '1-day streak' : `${days}-day streak`
+    const mins = data.lastReadDate === todayDateString() ? data.todayMinutes : 0
+    const minText = mins > 0 ? ` · ${mins}m read today` : ''
+    elements.streakBadge.textContent = `🔥 ${dayLabel}${minText}`
+}
+
+function startReadingSessionTracker() {
+    stopReadingSessionTracker()
+    sessionMinutes = 0
+    updateReadingStreak(1)
+    readingSessionTimer = setInterval(() => {
+        if (document.hidden || !readerView) return
+        sessionMinutes += 1
+        updateReadingStreak(1)
+        if (sessionMinutes === 5) {
+            showStatus('🔥 5 minutes of focused reading! Momentum building.', false, 3500)
+        } else if (sessionMinutes === 15) {
+            showStatus('✨ 15 minutes of deep reading! Habit unlocked.', false, 3500)
+        } else if (sessionMinutes === 30) {
+            showStatus('🏆 30 minutes in the zone! Mind restored.', false, 4000)
+        }
+    }, 60000)
+}
+
+function stopReadingSessionTracker() {
+    clearInterval(readingSessionTimer)
+    readingSessionTimer = null
+    sessionMinutes = 0
+}
 
 function scheduleBookProgress(fraction) {
     if (!currentBookId || !currentBookStored || !Number.isFinite(fraction)) return
@@ -1288,9 +1376,11 @@ async function openDjvuBook(file, addToLibrary, initialProgress) {
     } else {
         hideStatus()
     }
+    startReadingSessionTracker()
 }
 
 async function closeCurrentBook() {
+    stopReadingSessionTracker()
     if (elements.chaptersDialog.open) elements.chaptersDialog.close()
     if (elements.dictionaryDialog.open) elements.dictionaryDialog.close()
     clearSelectionLookup(true)
@@ -1452,6 +1542,7 @@ async function openBook(file, { addToLibrary = true, initialProgress = null } = 
         } else {
             hideStatus()
         }
+        startReadingSessionTracker()
     } catch (error) {
         console.error(error)
         try {
@@ -1630,4 +1721,5 @@ async function initializeApp() {
     await openPendingAndroidBook()
 }
 
+    updateStreakDisplay()
 initializeApp()

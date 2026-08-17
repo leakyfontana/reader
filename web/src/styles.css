@@ -155,6 +155,18 @@ input:focus-visible {
     color: var(--muted);
 }
 
+.streak-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin: 4px 0 0;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
+    color: var(--accent);
+    font-size: 0.85rem;
+    font-weight: 600;
+}
 
 .plus-button {
     position: relative;
