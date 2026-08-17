@@ -1421,16 +1421,9 @@ async function openBook(file, { addToLibrary = true, initialProgress = null, ini
         applyReaderControlVisibility()
         setNativeReaderMode(true)
         applyPreferences()
-        await view.renderer.next()
-        if (currentBookLocation) {
-            try {
-                await view.goTo(currentBookLocation)
-            } catch {
-                if (resumeProgress > 0) await goToReadingFraction(view, resumeProgress)
-            }
-        } else if (resumeProgress > 0) {
-            await goToReadingFraction(view, resumeProgress)
-        }
+        const targetLocation = currentBookLocation || (resumeProgress > 0 ? resumeProgress : null)
+        await view.init({ lastLocation: targetLocation })
+        renderChapters(view.book?.toc)
         const metadata = view.book?.metadata || {}
         const title = displayText(metadata.title) || titleFromFile(file.name)
         const author = displayText(metadata.author)
