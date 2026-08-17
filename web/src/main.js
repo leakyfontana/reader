@@ -70,6 +70,7 @@ let hydratingCovers = false
 let readerControlsVisible = true
 let currentBookId = null
 let currentBookStored = false
+let currentBookLocation = null
 let pendingBookProgress = null
 let progressSaveTimer = null
 let progressSavePromise = Promise.resolve()
@@ -83,11 +84,12 @@ let selectedLookupTerm = ''
 let dictionaryLookupText = ''
 let dictionaryRequest = 0
 
-function scheduleBookProgress(fraction) {
+function scheduleBookProgress(fraction, location = currentBookLocation) {
     if (!currentBookId || !currentBookStored || !Number.isFinite(fraction)) return
     pendingBookProgress = {
         id: currentBookId,
         fraction: Math.max(0, Math.min(1, fraction)),
+        location: location != null ? String(location) : null,
     }
     clearTimeout(progressSaveTimer)
     progressSaveTimer = setTimeout(() => {
@@ -101,7 +103,7 @@ function persistPendingBookProgress() {
     pendingBookProgress = null
     if (!progress) return progressSavePromise
     progressSavePromise = progressSavePromise
-        .then(() => saveBookProgress(progress.id, progress.fraction))
+        .then(() => saveBookProgress(progress.id, progress.fraction, progress.location))
         .catch(error => console.warn('Could not save reading progress', error))
     return progressSavePromise
 }
@@ -581,9 +583,14 @@ async function openStoredBook(id) {
     showStatus('Opening book…')
     try {
         const { metadata, file } = await loadBook(id)
-        await openBook(file, { addToLibrary: false, initialProgress: metadata.progress })
+        await openBook(file, {
+            addToLibrary: false,
+            initialProgress: metadata.progress,
+            initialLocation: metadata.location,
+        })
     } catch (error) {
-        showStatus(`Could not open this library book: ${error.message}`, true)
+        console.error(error)
+        showStatus(readableError(error), true)
     }
 }
 
@@ -782,8 +789,7 @@ function djvuTextUrl(page, request) {
     return `/__djvu/text?${params}`
 }
 
-async function openDjvuBook(file, addToLibrary, initialProgress) {
-    const bridge = globalThis.ReaderDjvu
+async function openDjvuBook(file, addToLibrary, initialProgress, initialLocation = null) {
     if (!bridge?.open) throw new Error('DjVu reading requires the Android app')
 
     const id = bookId(file)
@@ -1240,9 +1246,10 @@ async function openDjvuBook(file, addToLibrary, initialProgress) {
         },
     }
 
-    const initialPage = Math.round(initialProgress * (info.pageCount - 1))
+    const initialPage = Number.isInteger(Number(initialLocation))
+        ? Math.max(0, Math.min(info.pageCount - 1, Number(initialLocation)))
+        : Math.round(initialProgress * (info.pageCount - 1))
     await renderPage(initialPage)
-    const adjacentPage = initialPage < info.pageCount - 1 ? initialPage + 1 : initialPage - 1
     if (adjacentPage >= 0) await loadPage(adjacentPage)
     renderChapters(toc)
 
@@ -1308,8 +1315,8 @@ async function closeCurrentBook() {
     }
     currentBookId = null
     currentBookStored = false
+    currentBookLocation = null
     currentProgressFraction = 0
-    sliderLocationTotal = 0
     clearTimeout(sliderTooltipTimer)
     sliderTooltipTimer = null
     elements.progressTooltip.hidden = true
@@ -1364,7 +1371,7 @@ function hideSliderTooltip(delay = 0) {
     }, delay)
 }
 
-async function openBook(file, { addToLibrary = true, initialProgress = null } = {}) {
+async function openBook(file, { addToLibrary = true, initialProgress = null, initialLocation = null } = {}) {
     if (!file) return
     if (!isSupported(file)) {
         showStatus(
@@ -1373,7 +1380,6 @@ async function openBook(file, { addToLibrary = true, initialProgress = null } = 
         )
         return
     }
-
     showStatus(`Opening ${file.name}…`)
     await closeCurrentBook()
     currentKind = fileKind(file)
@@ -1384,11 +1390,11 @@ async function openBook(file, { addToLibrary = true, initialProgress = null } = 
         Number.isFinite(initialProgress) ? initialProgress : Number(libraryRecord?.progress) || 0,
     ))
     currentProgressFraction = resumeProgress
+    currentBookLocation = initialLocation != null ? String(initialLocation) : (libraryRecord?.location ?? null)
     currentBookStored = !addToLibrary || Boolean(libraryRecord)
-
     if (currentKind === 'djvu') {
         try {
-            await openDjvuBook(file, addToLibrary, resumeProgress)
+            await openDjvuBook(file, addToLibrary, resumeProgress, currentBookLocation)
         } catch (error) {
             console.error(error)
             try {
@@ -1416,9 +1422,15 @@ async function openBook(file, { addToLibrary = true, initialProgress = null } = 
         setNativeReaderMode(true)
         applyPreferences()
         await view.renderer.next()
-        if (resumeProgress > 0) await goToReadingFraction(view, resumeProgress)
-
-        renderChapters(view.book?.toc)
+        if (currentBookLocation) {
+            try {
+                await view.goTo(currentBookLocation)
+            } catch {
+                if (resumeProgress > 0) await goToReadingFraction(view, resumeProgress)
+            }
+        } else if (resumeProgress > 0) {
+            await goToReadingFraction(view, resumeProgress)
+        }
         const metadata = view.book?.metadata || {}
         const title = displayText(metadata.title) || titleFromFile(file.name)
         const author = displayText(metadata.author)
@@ -1485,8 +1497,9 @@ function updateLocation({ detail }) {
     const locationTotal = detail.location?.total
     sliderLocationTotal = Number.isInteger(locationTotal) && locationTotal > 0 ? locationTotal : 0
     currentProgressFraction = fraction
-    scheduleBookProgress(fraction)
-    const percent = Math.max(0, Math.min(100, Math.round(fraction * 100)))
+    const locationIdentifier = detail.cfi || (fixedLayoutLocation ? sectionIndex : null)
+    if (locationIdentifier != null) currentBookLocation = String(locationIdentifier)
+    scheduleBookProgress(fraction, currentBookLocation)
     const fixedPage = fixedLayoutLocation ? `${sectionIndex + 1} of ${sectionCount}` : null
     const page = detail.pageItem?.label || fixedPage || detail.location?.current
     elements.progressText.textContent = page ? `${percent}% · Page ${page}` : `${percent}% read`
@@ -1602,6 +1615,15 @@ document.addEventListener('pointerup', () => {
 })
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
     if (preferences.theme === 'system') applyPreferences()
+})
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) void flushBookProgress()
+})
+addEventListener('pagehide', () => {
+    void flushBookProgress()
+})
+addEventListener('beforeunload', () => {
+    void flushBookProgress()
 })
 
 async function openPendingAndroidBook() {
