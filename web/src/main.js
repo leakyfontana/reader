@@ -44,8 +44,8 @@ const elements = {
     chaptersButton: $('#chapters-button'),
     chaptersDialog: $('#chapters-dialog'),
     chapterList: $('#chapter-list'),
+    quickReturnButton: $('#quick-return-button'),
     selectionLookupButton: $('#selection-lookup-button'),
-    dictionaryDialog: $('#dictionary-dialog'),
     dictionaryWord: $('#dictionary-word'),
     dictionaryResults: $('#dictionary-results'),
     status: $('#status'),
@@ -82,6 +82,25 @@ let selectedLookupText = ''
 let selectedLookupTerm = ''
 let dictionaryLookupText = ''
 let dictionaryRequest = 0
+let quickReturnTarget = null
+let quickReturnTimer = null
+
+function showQuickReturnButton(target, label) {
+    if (!target) return
+    quickReturnTarget = target
+    clearTimeout(quickReturnTimer)
+    elements.quickReturnButton.textContent = `↩ Return to ${label}`
+    elements.quickReturnButton.hidden = false
+    quickReturnTimer = setTimeout(() => {
+        hideQuickReturnButton()
+    }, 15000)
+}
+
+function hideQuickReturnButton() {
+    clearTimeout(quickReturnTimer)
+    quickReturnTarget = null
+    elements.quickReturnButton.hidden = true
+}
 
 function scheduleBookProgress(fraction) {
     if (!currentBookId || !currentBookStored || !Number.isFinite(fraction)) return
@@ -633,9 +652,13 @@ function createChapterList(items) {
         if (hasLocation) {
             button.dataset.href = String(item.href)
             button.addEventListener('click', async () => {
+                const previousCfi = readerView?.lastLocation?.cfi
+                const previousFraction = currentProgressFraction
+                const previousLabel = elements.progressText.textContent || 'previous page'
                 try {
                     await readerView?.goTo(item.href)
                     elements.chaptersDialog.close()
+                    showQuickReturnButton(previousCfi ?? previousFraction, previousLabel)
                 } catch (error) {
                     showStatus(`Could not open this chapter: ${error.message}`, true)
                 }
@@ -1291,6 +1314,7 @@ async function openDjvuBook(file, addToLibrary, initialProgress) {
 }
 
 async function closeCurrentBook() {
+    hideQuickReturnButton()
     if (elements.chaptersDialog.open) elements.chaptersDialog.close()
     if (elements.dictionaryDialog.open) elements.dictionaryDialog.close()
     clearSelectionLookup(true)
@@ -1529,6 +1553,20 @@ elements.settings.addEventListener('click', event => {
 })
 $('#chapters-button').addEventListener('click', () => {
     if (!elements.chaptersButton.disabled) elements.chaptersDialog.showModal()
+})
+elements.quickReturnButton.addEventListener('click', async () => {
+    if (!quickReturnTarget || !readerView) return
+    const target = quickReturnTarget
+    hideQuickReturnButton()
+    try {
+        if (typeof target === 'number') {
+            await goToReadingFraction(readerView, target)
+        } else {
+            await readerView.goTo(target)
+        }
+    } catch (error) {
+        console.warn('Could not return to previous location', error)
+    }
 })
 elements.selectionLookupButton.addEventListener('click', showDictionaryLookup)
 elements.dictionaryDialog.addEventListener('click', event => {
