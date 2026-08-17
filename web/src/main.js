@@ -46,6 +46,7 @@ const elements = {
     chapterList: $('#chapter-list'),
     quickReturnButton: $('#quick-return-button'),
     selectionLookupButton: $('#selection-lookup-button'),
+    dictionaryDialog: $('#dictionary-dialog'),
     dictionaryWord: $('#dictionary-word'),
     dictionaryResults: $('#dictionary-results'),
     status: $('#status'),
@@ -59,7 +60,6 @@ const elements = {
     lineHeightOutput: $('#line-height-output'),
     hideControlsInput: $('#hide-controls-input'),
 }
-
 let preferences = loadPreferences()
 let readerView = null
 let currentKind = null
