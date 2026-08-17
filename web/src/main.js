@@ -177,12 +177,14 @@ function bookStyles() {
 
 function applyPreferences() {
     const theme = resolvedTheme()
+    const flow = preferences.flow === 'scrolled' ? 'scrolled' : 'paginated'
     document.documentElement.dataset.theme = theme
     globalThis.ReaderSystemUi?.setTheme(theme)
     document.querySelector('meta[name="color-scheme"]').content = theme === 'light' ? 'light' : 'dark'
 
     elements.themeSelect.value = preferences.theme
-    elements.flowSelect.value = preferences.flow || 'paginated'
+    elements.flowSelect.value = flow
+    elements.reader.dataset.flow = flow
     const upcomingTheme = nextTheme(theme)
     elements.themeButton.title = `Switch to ${upcomingTheme} theme`
     elements.themeButton.setAttribute('aria-label', `Switch to ${upcomingTheme} theme`)
@@ -199,8 +201,8 @@ function applyPreferences() {
     if (readerView) {
         readerView.classList.toggle('pdf', currentKind === 'pdf')
         readerView.renderer?.setStyles?.(bookStyles())
-        if (readerView.renderer?.setAttribute && currentKind !== 'djvu' && currentKind !== 'pdf') {
-            readerView.renderer.setAttribute('flow', preferences.flow || 'paginated')
+        if (readerView.renderer?.localName === 'foliate-paginator') {
+            readerView.renderer.setAttribute('flow', flow)
         }
     }
 }

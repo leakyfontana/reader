@@ -146,6 +146,12 @@ body.in-reader .app-bar {
     stroke: none;
 }
 
+.settings-icon {
+    fill: currentColor;
+    fill-rule: evenodd;
+    stroke: none;
+}
+
 .icon-button:active,
 .nav-button:active {
     background: var(--surface-strong);
@@ -405,6 +411,10 @@ body.reader-controls-hidden .reader-nav {
     height: 100%;
 }
 
+.reader[data-flow='scrolled'] foliate-view {
+    touch-action: pan-y;
+}
+
 .djvu-view {
     display: grid;
     width: 100%;
@@ -526,7 +536,7 @@ body.reader-controls-hidden .reader-nav {
     grid-template-columns: 44px minmax(0, 1fr);
     align-items: center;
     gap: 8px;
-    padding: 4px 12px max(4px, env(safe-area-inset-bottom));
+    padding: 4px 12px max(10px, calc(env(safe-area-inset-bottom) + 6px));
     border-top: 1px solid var(--line);
     background: color-mix(in srgb, var(--surface), transparent 4%);
     backdrop-filter: blur(12px);
