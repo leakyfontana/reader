@@ -204,6 +204,8 @@ function applyPreferences() {
         if (readerView.renderer?.localName === 'foliate-paginator') {
             readerView.renderer.setAttribute('flow', flow)
         }
+        const flowChange = readerView.setFlow?.(flow)
+        flowChange?.catch(error => showStatus(`Could not change reading direction: ${error.message}`, true))
     }
 }
 
@@ -829,21 +831,25 @@ async function openDjvuBook(file, addToLibrary, initialProgress) {
         return current
     }
 
+    const createDjvuTextLayer = () => {
+        const layer = document.createElement('div')
+        layer.className = 'djvu-text-layer'
+        layer.hidden = true
+        layer.onpointerdown = () => layer.classList.add('selecting')
+        layer.onpointerup = () => layer.classList.remove('selecting')
+        layer.onpointercancel = () => layer.classList.remove('selecting')
+        return layer
+    }
     const view = document.createElement('div')
     const pageContainer = document.createElement('div')
     const canvas = document.createElement('canvas')
-    const textLayer = document.createElement('div')
+    const textLayer = createDjvuTextLayer()
     const canvasContext = canvas.getContext('2d', { alpha: false })
     if (!canvasContext) throw new Error('This device cannot display DjVu pages')
     view.className = 'djvu-view'
     pageContainer.className = 'djvu-page-container'
     canvas.className = 'djvu-page'
     canvas.setAttribute('role', 'img')
-    textLayer.className = 'djvu-text-layer'
-    textLayer.hidden = true
-    textLayer.onpointerdown = () => textLayer.classList.add('selecting')
-    textLayer.onpointerup = () => textLayer.classList.remove('selecting')
-    textLayer.onpointercancel = () => textLayer.classList.remove('selecting')
     pageContainer.append(canvas, textLayer)
     view.append(pageContainer)
     readerView = view
@@ -863,6 +869,12 @@ async function openDjvuBook(file, addToLibrary, initialProgress) {
     let resizeTimer = null
     let renderedWidth = 0
     let renderedHeight = 0
+    let currentFlow = 'paginated'
+    let scrollGeneration = 0
+    let scrollObserver = null
+    let scrollTimer = null
+    let scrollPageRequest = 0
+    let scrollPages = []
 
     const targetSize = () => {
         const scale = Math.max(1, devicePixelRatio || 1)
@@ -983,12 +995,11 @@ async function openDjvuBook(file, addToLibrary, initialProgress) {
         pageContainer.style.height = `${height}px`
         return { width, height }
     }
-    const renderTextLayer = (pageText, displaySize, label) => {
-        clearSelectionLookup(true)
-        textLayer.replaceChildren()
-        textLayer.hidden = true
-        canvas.setAttribute('role', 'img')
-        canvas.removeAttribute('aria-hidden')
+    const renderTextLayer = (pageText, displaySize, label, targetCanvas, targetTextLayer) => {
+        targetTextLayer.replaceChildren()
+        targetTextLayer.hidden = true
+        targetCanvas.setAttribute('role', 'img')
+        targetCanvas.removeAttribute('aria-hidden')
         if (!pageText?.words.length) return
 
         const scaleX = displaySize.width / pageText.width
@@ -1063,11 +1074,11 @@ async function openDjvuBook(file, addToLibrary, initialProgress) {
 
         const endOfContent = document.createElement('div')
         endOfContent.className = 'djvu-text-end'
-        textLayer.append(flow, endOfContent)
-        textLayer.setAttribute('aria-label', label)
-        textLayer.hidden = false
-        canvas.removeAttribute('role')
-        canvas.setAttribute('aria-hidden', 'true')
+        targetTextLayer.append(flow, endOfContent)
+        targetTextLayer.setAttribute('aria-label', label)
+        targetTextLayer.hidden = false
+        targetCanvas.removeAttribute('role')
+        targetCanvas.setAttribute('aria-hidden', 'true')
 
         const range = document.createRange()
         const fittedLines = renderedLines.map(line => {
@@ -1133,6 +1144,17 @@ async function openDjvuBook(file, addToLibrary, initialProgress) {
         }).catch(ignorePrefetchError)
         return first
     }
+    const reportPage = nextIndex => {
+        pageIndex = nextIndex
+        const fraction = info.pageCount === 1 ? 0 : pageIndex / (info.pageCount - 1)
+        updateLocation({
+            detail: {
+                fraction,
+                pageItem: { label: `${pageIndex + 1} of ${info.pageCount}` },
+                tocItem: tocItemAt(pageIndex),
+            },
+        })
+    }
     const renderPage = async index => {
         if (destroyed) throw new Error('The DjVu document is closed')
         const nextIndex = Math.max(0, Math.min(info.pageCount - 1, index))
@@ -1152,6 +1174,7 @@ async function openDjvuBook(file, addToLibrary, initialProgress) {
         ])
         if (!bitmap || request !== renderRequest || destroyed) return
 
+        clearSelectionLookup(true)
         canvas.width = bitmap.width
         canvas.height = bitmap.height
         canvasContext.fillStyle = '#fff'
@@ -1160,19 +1183,158 @@ async function openDjvuBook(file, addToLibrary, initialProgress) {
         const pageLabel = `Page ${nextIndex + 1} of ${info.pageCount}`
         canvas.setAttribute('aria-label', pageLabel)
         const displaySize = fitPage(bitmap)
-        renderTextLayer(pageText, displaySize, pageLabel)
-        pageIndex = nextIndex
-        const fraction = info.pageCount === 1 ? 0 : pageIndex / (info.pageCount - 1)
-        updateLocation({
-            detail: {
-                fraction,
-                pageItem: { label: `${pageIndex + 1} of ${info.pageCount}` },
-                tocItem: tocItemAt(pageIndex),
-            },
-        })
+        renderTextLayer(pageText, displaySize, pageLabel, canvas, textLayer)
+        reportPage(nextIndex)
         void preRenderAround(pageIndex, direction)
     }
-    const navigate = index => renderPage(index).catch(error => showStatus(error.message, true))
+    const unloadScrollPage = page => {
+        if (page.dataset.rendered === 'false') return
+        page.dataset.renderRequest = String(++scrollPageRequest)
+        page.dataset.rendered = 'false'
+        page.replaceChildren()
+    }
+    const renderScrollPage = async page => {
+        if (page.dataset.rendered !== 'false') return
+        const generation = scrollGeneration
+        const request = String(++scrollPageRequest)
+        const index = Number(page.dataset.pageIndex)
+        page.dataset.renderRequest = request
+        page.dataset.rendered = 'loading'
+        const [bitmap, pageText] = await Promise.all([
+            loadPage(index),
+            loadPageText(index).catch(error => {
+                if (error?.name !== 'AbortError' && !destroyed) {
+                    console.warn(`Could not read DjVu page ${index + 1} text`, error)
+                }
+                return null
+            }),
+        ])
+        if (!bitmap
+            || destroyed
+            || generation !== scrollGeneration
+            || currentFlow !== 'scrolled'
+            || page.dataset.visible !== 'true'
+            || page.dataset.renderRequest !== request) {
+            if (page.dataset.renderRequest === request) page.dataset.rendered = 'false'
+            return
+        }
+
+        const scrollCanvas = document.createElement('canvas')
+        const scrollTextLayer = createDjvuTextLayer()
+        const context = scrollCanvas.getContext('2d', { alpha: false })
+        if (!context) throw new Error('This device cannot display DjVu pages')
+        scrollCanvas.className = 'djvu-page'
+        scrollCanvas.width = bitmap.width
+        scrollCanvas.height = bitmap.height
+        context.fillStyle = '#fff'
+        context.fillRect(0, 0, scrollCanvas.width, scrollCanvas.height)
+        context.drawImage(bitmap, 0, 0)
+        page.style.aspectRatio = `${bitmap.width} / ${bitmap.height}`
+        const displaySize = {
+            width: Math.max(1, page.clientWidth),
+            height: Math.max(1, page.clientHeight),
+        }
+        const pageLabel = `Page ${index + 1} of ${info.pageCount}`
+        scrollCanvas.setAttribute('aria-label', pageLabel)
+        page.replaceChildren(scrollCanvas, scrollTextLayer)
+        renderTextLayer(pageText, displaySize, pageLabel, scrollCanvas, scrollTextLayer)
+        page.dataset.rendered = 'true'
+    }
+    const updateScrolledPage = () => {
+        if (currentFlow !== 'scrolled' || !scrollPages.length) return
+        const center = view.scrollTop + (view.clientHeight / 2)
+        let low = 0
+        let high = scrollPages.length - 1
+        while (low < high) {
+            const middle = Math.floor((low + high) / 2)
+            const page = scrollPages[middle]
+            if (page.offsetTop + page.offsetHeight < center) low = middle + 1
+            else high = middle
+        }
+        const candidates = [scrollPages[low], scrollPages[Math.max(0, low - 1)]]
+        const current = candidates.reduce((closest, page) => {
+            const distance = Math.abs(center - (page.offsetTop + (page.offsetHeight / 2)))
+            return !closest || distance < closest.distance ? { page, distance } : closest
+        }, null)?.page
+        const index = Number(current?.dataset.pageIndex)
+        if (Number.isInteger(index) && index !== pageIndex) reportPage(index)
+    }
+    const onScrolled = () => {
+        clearTimeout(scrollTimer)
+        scrollTimer = setTimeout(updateScrolledPage, 120)
+    }
+    const stopScrolledFlow = () => {
+        scrollGeneration += 1
+        scrollObserver?.disconnect()
+        scrollObserver = null
+        clearTimeout(scrollTimer)
+        scrollTimer = null
+        view.removeEventListener('scroll', onScrolled)
+        scrollPages = []
+    }
+    const scrollToPage = async index => {
+        const nextIndex = Math.max(0, Math.min(info.pageCount - 1, index))
+        const page = scrollPages[nextIndex]
+        if (!page) return
+        const paddingTop = parseFloat(getComputedStyle(view).paddingTop) || 0
+        view.scrollTo({ top: Math.max(0, page.offsetTop - paddingTop), behavior: 'auto' })
+        page.dataset.visible = 'true'
+        reportPage(nextIndex)
+        await renderScrollPage(page)
+    }
+    const startScrolledFlow = async index => {
+        stopScrolledFlow()
+        const { width, height } = targetSize()
+        renderedWidth = width
+        renderedHeight = height
+        currentFlow = 'scrolled'
+        renderRequest += 1
+        view.classList.add('scrolled')
+        const aspectRatio = canvas.width > 0 && canvas.height > 0
+            ? `${canvas.width} / ${canvas.height}`
+            : '3 / 4'
+        const fragment = document.createDocumentFragment()
+        scrollPages = Array.from({ length: info.pageCount }, (_, pageNumber) => {
+            const page = document.createElement('div')
+            page.className = 'djvu-page-container djvu-scroll-page'
+            page.dataset.pageIndex = String(pageNumber)
+            page.dataset.rendered = 'false'
+            page.dataset.visible = 'false'
+            page.style.aspectRatio = aspectRatio
+            fragment.append(page)
+            return page
+        })
+        view.replaceChildren(fragment)
+        scrollObserver = new IntersectionObserver(entries => {
+            for (const entry of entries) {
+                const page = entry.target
+                page.dataset.visible = String(entry.isIntersecting)
+                if (entry.isIntersecting) {
+                    void renderScrollPage(page).catch(error => {
+                        if (!destroyed) showStatus(error.message, true)
+                    })
+                } else {
+                    unloadScrollPage(page)
+                }
+            }
+        }, { root: view, rootMargin: '100% 0px' })
+        for (const page of scrollPages) scrollObserver.observe(page)
+        view.addEventListener('scroll', onScrolled, { passive: true })
+        await new Promise(resolve => requestAnimationFrame(resolve))
+        await scrollToPage(index)
+    }
+    const showPaginatedFlow = async index => {
+        stopScrolledFlow()
+        currentFlow = 'paginated'
+        view.classList.remove('scrolled')
+        view.replaceChildren(pageContainer)
+        view.scrollTop = 0
+        await renderPage(index)
+    }
+    const goToPage = index => currentFlow === 'scrolled'
+        ? scrollToPage(index)
+        : renderPage(index)
+    const navigate = index => goToPage(index).catch(error => showStatus(error.message, true))
     view.goLeft = () => navigate(pageIndex - 1)
     view.goRight = () => navigate(pageIndex + 1)
     view.goTo = target => {
@@ -1180,21 +1342,33 @@ async function openDjvuBook(file, addToLibrary, initialProgress) {
         if (!Number.isInteger(index)) {
             return Promise.reject(new Error('This DjVu chapter has no page destination'))
         }
-        return renderPage(index)
+        return goToPage(index)
     }
-    view.goToFraction = fraction => renderPage(Math.round(
+    view.goToFraction = fraction => goToPage(Math.round(
         Math.max(0, Math.min(1, fraction)) * (info.pageCount - 1),
     ))
     view.progressLabelForFraction = fraction => {
         const index = Math.round(Math.max(0, Math.min(1, fraction)) * (info.pageCount - 1))
         return `Page ${index + 1} of ${info.pageCount}`
     }
+    view.setFlow = flow => {
+        const nextFlow = flow === 'scrolled' ? 'scrolled' : 'paginated'
+        if (nextFlow === currentFlow) return Promise.resolve()
+        return nextFlow === 'scrolled'
+            ? startScrolledFlow(pageIndex)
+            : showPaginatedFlow(pageIndex)
+    }
 
     const onResize = () => {
         clearTimeout(resizeTimer)
         resizeTimer = setTimeout(() => {
             const { width, height } = targetSize()
-            if (width !== renderedWidth || height !== renderedHeight) navigate(pageIndex)
+            if (width === renderedWidth && height === renderedHeight) return
+            if (currentFlow === 'scrolled') {
+                void startScrolledFlow(pageIndex).catch(error => showStatus(error.message, true))
+            } else {
+                navigate(pageIndex)
+            }
         }, 180)
     }
     addEventListener('resize', onResize)
@@ -1215,6 +1389,7 @@ async function openDjvuBook(file, addToLibrary, initialProgress) {
         }
     }, { passive: true })
     view.addEventListener('touchend', event => {
+        if (currentFlow === 'scrolled') return
         const selection = document.getSelection()
         if (selection && !selection.isCollapsed) return
         const touch = event.changedTouches[0]
@@ -1240,6 +1415,7 @@ async function openDjvuBook(file, addToLibrary, initialProgress) {
         destroy: () => {
             destroyed = true
             renderRequest += 1
+            stopScrolledFlow()
             pageAbortController.abort()
             clearTimeout(resizeTimer)
             removeEventListener('resize', onResize)

@@ -424,6 +424,29 @@ body.reader-controls-hidden .reader-nav {
     touch-action: pan-y;
 }
 
+.djvu-view.scrolled {
+    display: block;
+    box-sizing: border-box;
+    padding-top: max(64px, calc(env(safe-area-inset-top) + 56px));
+    padding-bottom: max(72px, calc(env(safe-area-inset-bottom) + 68px));
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    place-items: initial;
+    scroll-padding-top: max(64px, calc(env(safe-area-inset-top) + 56px));
+    touch-action: pan-y;
+}
+
+.djvu-scroll-page {
+    width: 100%;
+    max-width: 900px;
+    margin-inline: auto;
+}
+
+.djvu-scroll-page + .djvu-scroll-page {
+    margin-top: 12px;
+}
+
 .djvu-page-container {
     position: relative;
     flex: none;
