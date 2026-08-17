@@ -1176,7 +1176,11 @@ async function openDjvuBook(file, addToLibrary, initialProgress) {
     ))
     view.progressLabelForFraction = fraction => {
         const index = Math.round(Math.max(0, Math.min(1, fraction)) * (info.pageCount - 1))
-        return `Page ${index + 1} of ${info.pageCount}`
+        const tocItem = tocItemAt(index)
+        const chapterLabel = tocItem?.label ? displayText(tocItem.label) : null
+        return chapterLabel
+            ? `${chapterLabel} · Page ${index + 1} of ${info.pageCount}`
+            : `Page ${index + 1} of ${info.pageCount}`
     }
 
     const onResize = () => {
@@ -1334,6 +1338,11 @@ function sliderPositionLabel(fraction) {
         return `Page ${page} of ${pageCount}`
     }
 
+    const pageItemLabel = readerView?.lastLocation?.pageItem?.label
+    if (pageItemLabel && Math.abs(clamped - currentProgressFraction) < 0.02) {
+        return `Page ${pageItemLabel}`
+    }
+
     if (sliderLocationTotal > 0) {
         const location = Math.round(clamped * (sliderLocationTotal - 1)) + 1
         return `Location ${location} of ${sliderLocationTotal}`
@@ -1489,7 +1498,11 @@ function updateLocation({ detail }) {
     const percent = Math.max(0, Math.min(100, Math.round(fraction * 100)))
     const fixedPage = fixedLayoutLocation ? `${sectionIndex + 1} of ${sectionCount}` : null
     const page = detail.pageItem?.label || fixedPage || detail.location?.current
-    elements.progressText.textContent = page ? `${percent}% · Page ${page}` : `${percent}% read`
+    const tocLabel = detail.tocItem?.label ? displayText(detail.tocItem.label) : null
+    const pageDisplay = page ? `Page ${page}` : `${percent}% read`
+    elements.progressText.textContent = tocLabel && page
+        ? `${percent}% · ${pageDisplay} · ${tocLabel}`
+        : (page ? `${percent}% · ${pageDisplay}` : `${percent}% read`)
     updateSliderTooltip(fraction)
     const currentHref = detail.tocItem?.href
     for (const button of elements.chapterList.querySelectorAll('[data-href]')) {
