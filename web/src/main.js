@@ -33,6 +33,7 @@ const elements = {
     libraryGrid: $('#library-grid'),
     streakBadge: $('#streak-badge'),
     openButton: $('#open-button'),
+    readerShell: $('#reader-shell'),
     readerNav: $('.reader-nav'),
     reader: $('#reader'),
     fileInput: $('#file-input'),
