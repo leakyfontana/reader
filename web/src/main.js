@@ -563,6 +563,7 @@ async function renderLibrary({ hydrateCovers = true } = {}) {
 async function showLibrary() {
     await closeCurrentBook()
     currentKind = null
+    document.body.classList.remove('in-reader')
     elements.library.hidden = false
     elements.readerShell.hidden = true
     readerControlsVisible = true
@@ -1273,6 +1274,7 @@ async function openDjvuBook(file, addToLibrary, initialProgress) {
 
     elements.library.hidden = true
     elements.readerShell.hidden = false
+    document.body.classList.add('in-reader')
     readerControlsVisible = true
     applyReaderControlVisibility()
     setNativeReaderMode(true)
@@ -1291,6 +1293,7 @@ async function openDjvuBook(file, addToLibrary, initialProgress) {
 }
 
 async function closeCurrentBook() {
+    document.body.classList.remove('in-reader')
     if (elements.chaptersDialog.open) elements.chaptersDialog.close()
     if (elements.dictionaryDialog.open) elements.dictionaryDialog.close()
     clearSelectionLookup(true)
@@ -1411,6 +1414,7 @@ async function openBook(file, { addToLibrary = true, initialProgress = null } = 
         await view.open(await bookSource(file, currentKind))
         elements.library.hidden = true
         elements.readerShell.hidden = false
+        document.body.classList.add('in-reader')
         readerControlsVisible = true
         applyReaderControlVisibility()
         setNativeReaderMode(true)
