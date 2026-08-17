@@ -1550,25 +1550,68 @@ elements.themeButton.addEventListener('click', () => {
 })
 
 const sliderFraction = event => Number(event.target.value)
-const navigateToSliderPosition = event =>
-    goToReadingFraction(readerView, sliderFraction(event))?.catch(console.error)
+let sliderGestureStartX = 0
+let sliderGestureStartY = 0
+let sliderGestureInitialFraction = 0
+let sliderGestureCancelled = false
+
+const navigateToSliderPosition = event => {
+    if (sliderGestureCancelled) return
+    return goToReadingFraction(readerView, sliderFraction(event))?.catch(console.error)
+}
+
 elements.progressSlider.addEventListener('focus', event => {
     showSliderTooltip(sliderFraction(event))
 })
 elements.progressSlider.addEventListener('pointerdown', event => {
+    sliderGestureStartX = event.clientX
+    sliderGestureStartY = event.clientY
+    sliderGestureInitialFraction = currentProgressFraction
+    sliderGestureCancelled = false
     showSliderTooltip(sliderFraction(event))
 })
+elements.progressSlider.addEventListener('pointermove', event => {
+    if (!event.buttons) return
+    const deltaX = Math.abs(event.clientX - sliderGestureStartX)
+    const deltaY = event.clientY - sliderGestureStartY
+    if (deltaY < -12 && Math.abs(deltaY) > deltaX) {
+        sliderGestureCancelled = true
+        elements.progressSlider.value = String(sliderGestureInitialFraction)
+        updateSliderTooltip(sliderGestureInitialFraction)
+        hideSliderTooltip()
+    }
+})
 elements.progressSlider.addEventListener('input', event => {
+    if (sliderGestureCancelled) return
     showSliderTooltip(sliderFraction(event))
     if (currentKind !== 'djvu') navigateToSliderPosition(event)
 })
 elements.progressSlider.addEventListener('change', event => {
+    if (sliderGestureCancelled) {
+        sliderGestureCancelled = false
+        elements.progressSlider.value = String(currentProgressFraction)
+        updateSliderTooltip(currentProgressFraction)
+        hideSliderTooltip()
+        return
+    }
     showSliderTooltip(sliderFraction(event))
     if (currentKind === 'djvu') navigateToSliderPosition(event)
     hideSliderTooltip(1400)
 })
-elements.progressSlider.addEventListener('pointerup', () => hideSliderTooltip(1400))
-elements.progressSlider.addEventListener('pointercancel', () => hideSliderTooltip())
+elements.progressSlider.addEventListener('pointerup', () => {
+    if (sliderGestureCancelled) {
+        sliderGestureCancelled = false
+        elements.progressSlider.value = String(currentProgressFraction)
+        updateSliderTooltip(currentProgressFraction)
+    }
+    hideSliderTooltip(1400)
+})
+elements.progressSlider.addEventListener('pointercancel', () => {
+    sliderGestureCancelled = false
+    elements.progressSlider.value = String(currentProgressFraction)
+    updateSliderTooltip(currentProgressFraction)
+    hideSliderTooltip()
+})
 elements.progressSlider.addEventListener('blur', () => hideSliderTooltip())
 elements.fileInput.addEventListener('change', event => {
     openBook(event.target.files?.[0])

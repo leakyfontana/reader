@@ -488,11 +488,10 @@ body.reader-controls-hidden .reader-shell {
     display: grid;
     grid-template-columns: 52px 44px minmax(0, 1fr) 52px;
     align-items: center;
-    padding: 4px 8px max(4px, env(safe-area-inset-bottom));
+    padding: 6px 8px max(14px, env(safe-area-inset-bottom, 14px));
     border-top: 1px solid var(--line);
     background: var(--surface);
 }
-
 .reader-nav.chapters-unavailable {
     grid-template-columns: 52px minmax(0, 1fr) 52px;
 }
@@ -505,8 +504,8 @@ body.reader-controls-hidden .reader-shell {
 #progress-slider {
     width: 100%;
     accent-color: var(--accent);
+    touch-action: pan-y;
 }
-
 .progress-tooltip {
     position: absolute;
     z-index: 2;
