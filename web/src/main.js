@@ -7,6 +7,7 @@ import {
     persistStorage,
     saveBook,
     saveBookCover,
+    saveBookFinished,
     saveBookProgress,
 } from './library.js'
 import { lookupDictionary, lookupTermFromSelection } from './dictionary.js'
@@ -20,6 +21,7 @@ const THEME_CYCLE = ['light', 'dark', 'night']
 const PREFERENCE_KEY = 'reader.preferences.v1'
 const defaults = {
     theme: 'system',
+    flow: 'paginated',
     font: 'publisher',
     fontSize: 100,
     lineHeight: 1.5,
@@ -31,6 +33,7 @@ const elements = {
     library: $('#library'),
     libraryEmpty: $('#library-empty'),
     libraryGrid: $('#library-grid'),
+    streakBadge: $('#streak-badge'),
     openButton: $('#open-button'),
     readerShell: $('#reader-shell'),
     readerNav: $('.reader-nav'),
@@ -44,22 +47,60 @@ const elements = {
     chaptersButton: $('#chapters-button'),
     chaptersDialog: $('#chapters-dialog'),
     chapterList: $('#chapter-list'),
+    quickReturnButton: $('#quick-return-button'),
     selectionLookupButton: $('#selection-lookup-button'),
     dictionaryDialog: $('#dictionary-dialog'),
     dictionaryWord: $('#dictionary-word'),
     dictionaryResults: $('#dictionary-results'),
     status: $('#status'),
     settings: $('#settings-dialog'),
+    settingsButton: $('#settings-button'),
     themeButton: $('#theme-button'),
     themeSelect: $('#theme-select'),
+    flowSelect: $('#flow-select'),
     fontSelect: $('#font-select'),
     fontSizeInput: $('#font-size-input'),
     fontSizeOutput: $('#font-size-output'),
     lineHeightInput: $('#line-height-input'),
     lineHeightOutput: $('#line-height-output'),
     hideControlsInput: $('#hide-controls-input'),
+    completionDialog: $('#completion-dialog'),
+    completionConfirmButton: $('#completion-confirm-button'),
+    completionDismissButton: $('#completion-dismiss-button'),
 }
 
+function applyDisplayCutout() {
+    let cutout = null
+    try {
+        const value = globalThis.ReaderSystemUi?.getDisplayCutout?.()
+        cutout = value ? JSON.parse(value) : null
+    } catch {
+        cutout = null
+    }
+
+    const left = Number(cutout?.left)
+    const right = Number(cutout?.right)
+    const bottom = Number(cutout?.bottom)
+    const viewportWidth = Number(cutout?.viewportWidth)
+    const hasTopCutout = Number.isFinite(left)
+        && Number.isFinite(right)
+        && Number.isFinite(bottom)
+        && Number.isFinite(viewportWidth)
+        && left >= 0
+        && right > left
+        && right <= viewportWidth
+        && bottom > 0
+
+    document.documentElement.dataset.displayCutout = hasTopCutout ? 'top' : 'none'
+    const style = document.documentElement.style
+    if (hasTopCutout) {
+        style.setProperty('--display-cutout-bottom', `${bottom}px`)
+    } else {
+        style.removeProperty('--display-cutout-bottom')
+    }
+}
+
+const completedPromptedBooks = new Set()
 let preferences = loadPreferences()
 let readerView = null
 let currentKind = null
@@ -70,11 +111,13 @@ let hydratingCovers = false
 let readerControlsVisible = true
 let currentBookId = null
 let currentBookStored = false
+let currentBookLocation = null
 let pendingBookProgress = null
 let progressSaveTimer = null
 let progressSavePromise = Promise.resolve()
 let currentProgressFraction = 0
 let sliderLocationTotal = 0
+let currentPageLabel = null
 let sliderTooltipTimer = null
 let selectionLookupTimer = null
 let selectedLookupDocument = null
@@ -82,12 +125,130 @@ let selectedLookupText = ''
 let selectedLookupTerm = ''
 let dictionaryLookupText = ''
 let dictionaryRequest = 0
+const STREAK_STORAGE_KEY = 'reader.streak.v1'
+let readingSessionTimer = null
+let sessionMinutes = 0
+let quickReturnTarget = null
+let quickReturnTimer = null
 
-function scheduleBookProgress(fraction) {
+function showQuickReturnButton(target, label) {
+    if (target == null) return
+    quickReturnTarget = target
+    clearTimeout(quickReturnTimer)
+    elements.quickReturnButton.textContent = `Return to ${label}`
+    elements.quickReturnButton.hidden = false
+    quickReturnTimer = setTimeout(hideQuickReturnButton, 15000)
+}
+
+function hideQuickReturnButton() {
+    clearTimeout(quickReturnTimer)
+    quickReturnTimer = null
+    quickReturnTarget = null
+    elements.quickReturnButton.hidden = true
+}
+
+function dateString(date = new Date()) {
+    return [
+        date.getFullYear(),
+        String(date.getMonth() + 1).padStart(2, '0'),
+        String(date.getDate()).padStart(2, '0'),
+    ].join('-')
+}
+
+function loadStreakData() {
+    const defaults = {
+        streak: 0,
+        lastReadDate: '',
+        todayMinutes: 0,
+        totalMinutes: 0,
+    }
+    try {
+        const stored = JSON.parse(localStorage.getItem(STREAK_STORAGE_KEY))
+        if (!stored || typeof stored !== 'object') return defaults
+        return {
+            streak: Number.isInteger(stored.streak) && stored.streak > 0 ? stored.streak : 0,
+            lastReadDate: typeof stored.lastReadDate === 'string' ? stored.lastReadDate : '',
+            todayMinutes: Number.isInteger(stored.todayMinutes) && stored.todayMinutes > 0
+                ? stored.todayMinutes
+                : 0,
+            totalMinutes: Number.isInteger(stored.totalMinutes) && stored.totalMinutes > 0
+                ? stored.totalMinutes
+                : 0,
+        }
+    } catch {
+        return defaults
+    }
+}
+
+function saveStreakData(data) {
+    try {
+        localStorage.setItem(STREAK_STORAGE_KEY, JSON.stringify(data))
+    } catch (error) {
+        console.warn('Could not save streak data', error)
+    }
+}
+
+function updateReadingStreak() {
+    const data = loadStreakData()
+    const today = dateString()
+    const yesterday = new Date()
+    yesterday.setDate(yesterday.getDate() - 1)
+
+    if (data.lastReadDate === today) {
+        data.todayMinutes += 1
+    } else {
+        data.streak = data.lastReadDate === dateString(yesterday) ? data.streak + 1 : 1
+        data.lastReadDate = today
+        data.todayMinutes = 1
+    }
+    data.totalMinutes += 1
+    saveStreakData(data)
+    updateStreakDisplay()
+}
+
+function updateStreakDisplay() {
+    const data = loadStreakData()
+    const today = dateString()
+    const yesterday = new Date()
+    yesterday.setDate(yesterday.getDate() - 1)
+    const streakIsActive = data.lastReadDate === today
+        || data.lastReadDate === dateString(yesterday)
+    const days = streakIsActive ? data.streak : 0
+    const dayLabel = days === 1 ? '1-day reading streak' : `${days}-day reading streak`
+    const minutes = data.lastReadDate === today ? data.todayMinutes : 0
+    elements.streakBadge.textContent = minutes
+        ? `${dayLabel} · ${minutes}m read today`
+        : dayLabel
+}
+
+function startReadingSessionTracker() {
+    stopReadingSessionTracker()
+    readingSessionTimer = setInterval(() => {
+        if (document.hidden || !document.hasFocus() || !readerView) return
+        sessionMinutes += 1
+        updateReadingStreak()
+        if (sessionMinutes === 5) {
+            showStatus('5 minutes of focused reading.', false, 3500)
+        } else if (sessionMinutes === 15) {
+            showStatus('15 minutes of focused reading.', false, 3500)
+        } else if (sessionMinutes === 30) {
+            showStatus('30 minutes of focused reading.', false, 4000)
+        }
+    }, 60000)
+}
+
+function stopReadingSessionTracker() {
+    clearInterval(readingSessionTimer)
+    readingSessionTimer = null
+    sessionMinutes = 0
+}
+
+function scheduleBookProgress(fraction, location = currentBookLocation) {
     if (!currentBookId || !currentBookStored || !Number.isFinite(fraction)) return
     pendingBookProgress = {
         id: currentBookId,
         fraction: Math.max(0, Math.min(1, fraction)),
+        location: location != null ? String(location) : null,
     }
     clearTimeout(progressSaveTimer)
     progressSaveTimer = setTimeout(() => {
@@ -101,7 +262,7 @@ function persistPendingBookProgress() {
     pendingBookProgress = null
     if (!progress) return progressSavePromise
     progressSavePromise = progressSavePromise
-        .then(() => saveBookProgress(progress.id, progress.fraction))
+        .then(() => saveBookProgress(progress.id, progress.fraction, progress.location))
         .catch(error => console.warn('Could not save reading progress', error))
     return progressSavePromise
 }
@@ -162,6 +323,11 @@ function bookStyles() {
         body {
             background: ${palette.background} !important;
             color: ${palette.ink} !important;
+            padding-top: max(8px, env(safe-area-inset-top, 8px)) !important;
+            padding-bottom: max(12px, env(safe-area-inset-bottom, 12px)) !important;
+            padding-left: max(16px, env(safe-area-inset-left, 16px)) !important;
+            padding-right: max(16px, env(safe-area-inset-right, 16px)) !important;
+            box-sizing: border-box !important;
         }
         body, p, li, blockquote, dd {
             line-height: ${preferences.lineHeight} !important;
@@ -174,11 +340,14 @@ function bookStyles() {
 
 function applyPreferences() {
     const theme = resolvedTheme()
+    const flow = preferences.flow === 'scrolled' ? 'scrolled' : 'paginated'
     document.documentElement.dataset.theme = theme
     globalThis.ReaderSystemUi?.setTheme(theme)
     document.querySelector('meta[name="color-scheme"]').content = theme === 'light' ? 'light' : 'dark'
 
     elements.themeSelect.value = preferences.theme
+    elements.flowSelect.value = flow
+    elements.reader.dataset.flow = flow
     const upcomingTheme = nextTheme(theme)
     elements.themeButton.title = `Switch to ${upcomingTheme} theme`
     elements.themeButton.setAttribute('aria-label', `Switch to ${upcomingTheme} theme`)
@@ -195,11 +364,19 @@ function applyPreferences() {
     if (readerView) {
         readerView.classList.toggle('pdf', currentKind === 'pdf')
         readerView.renderer?.setStyles?.(bookStyles())
+        if (readerView.renderer?.localName === 'foliate-paginator') {
+            readerView.renderer.setAttribute('margin', '16')
+            readerView.renderer.setAttribute('flow', flow)
+        }
+        const flowChange = readerView.setFlow?.(flow)
+        flowChange?.catch(error => showStatus(`Could not change reading direction: ${error.message}`, true))
     }
 }
 
 function applyReaderControlVisibility() {
-    const hidden = Boolean(readerView && preferences.hideControls && !readerControlsVisible)
+    const hidden = Boolean(readerView
+        && preferences.hideControls
+        && !readerControlsVisible)
     document.body.classList.toggle('reader-controls-hidden', hidden)
 }
 
@@ -209,9 +386,10 @@ function setNativeReaderMode(enabled) {
 
 function toggleReaderControls(event) {
     if (!preferences.hideControls || event.defaultPrevented) return
-    if (event.target?.closest?.('a, button, input, select, textarea, label')) return
-    const selection = event.currentTarget.getSelection?.()
-        ?? event.currentTarget.ownerDocument?.getSelection?.()
+    if (event.target?.closest?.('a, button, input, select, textarea, label, dialog')) return
+    const selection = event.currentTarget?.getSelection?.()
+        ?? event.currentTarget?.ownerDocument?.getSelection?.()
+        ?? window.getSelection()
     if (selection && !selection.isCollapsed) return
     readerControlsVisible = !readerControlsVisible
     applyReaderControlVisibility()
@@ -274,7 +452,7 @@ function updateSelectionLookup(doc) {
         : rangeContainer?.parentElement
     const insideReaderText = doc !== document || Boolean(rangeElement?.closest('.djvu-text-layer'))
     const text = selection && !selection.isCollapsed && insideReaderText
-        ? selection.toString().replace(/\s+/g, ' ').trim()
+        ? selection.toString().trim()
         : ''
     const term = lookupTermFromSelection(text)
     if (!term) {
@@ -506,7 +684,7 @@ function createBookCard(book) {
         .filter(Boolean)
         .join(' · ')
     const progress = Math.max(0, Math.min(1, Number(book.progress) || 0))
-    const finished = book.finished === true || progress >= 0.999
+    const finished = book.finished === true
     const percentage = finished ? 100 : Math.min(99, Math.floor(progress * 100))
     const progressText = document.createElement('span')
     progressText.className = 'library-book-progress-text'
@@ -563,6 +741,7 @@ async function renderLibrary({ hydrateCovers = true } = {}) {
 async function showLibrary() {
     await closeCurrentBook()
     currentKind = null
+    document.body.classList.remove('in-reader')
     elements.library.hidden = false
     elements.readerShell.hidden = true
     readerControlsVisible = true
@@ -581,9 +760,14 @@ async function openStoredBook(id) {
     showStatus('Opening book…')
     try {
         const { metadata, file } = await loadBook(id)
-        await openBook(file, { addToLibrary: false, initialProgress: metadata.progress })
+        await openBook(file, {
+            addToLibrary: false,
+            initialProgress: metadata.progress,
+            initialLocation: metadata.location,
+        })
     } catch (error) {
-        showStatus(`Could not open this library book: ${error.message}`, true)
+        console.error(error)
+        showStatus(readableError(error), true)
     }
 }
 
@@ -633,9 +817,13 @@ function createChapterList(items) {
         if (hasLocation) {
             button.dataset.href = String(item.href)
             button.addEventListener('click', async () => {
+                const previousCfi = readerView?.lastLocation?.cfi
+                const previousFraction = currentProgressFraction
+                const previousLabel = elements.progressText.textContent || 'previous page'
                 try {
                     await readerView?.goTo(item.href)
                     elements.chaptersDialog.close()
+                    showQuickReturnButton(previousCfi ?? previousFraction, previousLabel)
                 } catch (error) {
                     showStatus(`Could not open this chapter: ${error.message}`, true)
                 }
@@ -782,7 +970,7 @@ function djvuTextUrl(page, request) {
     return `/__djvu/text?${params}`
 }
 
-async function openDjvuBook(file, addToLibrary, initialProgress) {
+async function openDjvuBook(file, addToLibrary, initialProgress, initialLocation = null) {
     const bridge = globalThis.ReaderDjvu
     if (!bridge?.open) throw new Error('DjVu reading requires the Android app')
 
@@ -818,21 +1006,25 @@ async function openDjvuBook(file, addToLibrary, initialProgress) {
         return current
     }
 
+    const createDjvuTextLayer = () => {
+        const layer = document.createElement('div')
+        layer.className = 'djvu-text-layer'
+        layer.hidden = true
+        layer.onpointerdown = () => layer.classList.add('selecting')
+        layer.onpointerup = () => layer.classList.remove('selecting')
+        layer.onpointercancel = () => layer.classList.remove('selecting')
+        return layer
+    }
     const view = document.createElement('div')
     const pageContainer = document.createElement('div')
     const canvas = document.createElement('canvas')
-    const textLayer = document.createElement('div')
+    const textLayer = createDjvuTextLayer()
     const canvasContext = canvas.getContext('2d', { alpha: false })
     if (!canvasContext) throw new Error('This device cannot display DjVu pages')
     view.className = 'djvu-view'
     pageContainer.className = 'djvu-page-container'
     canvas.className = 'djvu-page'
     canvas.setAttribute('role', 'img')
-    textLayer.className = 'djvu-text-layer'
-    textLayer.hidden = true
-    textLayer.onpointerdown = () => textLayer.classList.add('selecting')
-    textLayer.onpointerup = () => textLayer.classList.remove('selecting')
-    textLayer.onpointercancel = () => textLayer.classList.remove('selecting')
     pageContainer.append(canvas, textLayer)
     view.append(pageContainer)
     readerView = view
@@ -852,6 +1044,12 @@ async function openDjvuBook(file, addToLibrary, initialProgress) {
     let resizeTimer = null
     let renderedWidth = 0
     let renderedHeight = 0
+    let currentFlow = 'paginated'
+    let scrollGeneration = 0
+    let scrollObserver = null
+    let scrollTimer = null
+    let scrollPageRequest = 0
+    let scrollPages = []
 
     const targetSize = () => {
         const scale = Math.max(1, devicePixelRatio || 1)
@@ -972,12 +1170,11 @@ async function openDjvuBook(file, addToLibrary, initialProgress) {
         pageContainer.style.height = `${height}px`
         return { width, height }
     }
-    const renderTextLayer = (pageText, displaySize, label) => {
-        clearSelectionLookup(true)
-        textLayer.replaceChildren()
-        textLayer.hidden = true
-        canvas.setAttribute('role', 'img')
-        canvas.removeAttribute('aria-hidden')
+    const renderTextLayer = (pageText, displaySize, label, targetCanvas, targetTextLayer) => {
+        targetTextLayer.replaceChildren()
+        targetTextLayer.hidden = true
+        targetCanvas.setAttribute('role', 'img')
+        targetCanvas.removeAttribute('aria-hidden')
         if (!pageText?.words.length) return
 
         const scaleX = displaySize.width / pageText.width
@@ -1052,11 +1249,11 @@ async function openDjvuBook(file, addToLibrary, initialProgress) {
 
         const endOfContent = document.createElement('div')
         endOfContent.className = 'djvu-text-end'
-        textLayer.append(flow, endOfContent)
-        textLayer.setAttribute('aria-label', label)
-        textLayer.hidden = false
-        canvas.removeAttribute('role')
-        canvas.setAttribute('aria-hidden', 'true')
+        targetTextLayer.append(flow, endOfContent)
+        targetTextLayer.setAttribute('aria-label', label)
+        targetTextLayer.hidden = false
+        targetCanvas.removeAttribute('role')
+        targetCanvas.setAttribute('aria-hidden', 'true')
 
         const range = document.createRange()
         const fittedLines = renderedLines.map(line => {
@@ -1122,6 +1319,18 @@ async function openDjvuBook(file, addToLibrary, initialProgress) {
         }).catch(ignorePrefetchError)
         return first
     }
+    const reportPage = nextIndex => {
+        pageIndex = nextIndex
+        currentBookLocation = String(pageIndex)
+        const fraction = info.pageCount === 1 ? 0 : pageIndex / (info.pageCount - 1)
+        updateLocation({
+            detail: {
+                fraction,
+                pageItem: { label: `${pageIndex + 1} of ${info.pageCount}` },
+                tocItem: tocItemAt(pageIndex),
+            },
+        })
+    }
     const renderPage = async index => {
         if (destroyed) throw new Error('The DjVu document is closed')
         const nextIndex = Math.max(0, Math.min(info.pageCount - 1, index))
@@ -1141,6 +1350,7 @@ async function openDjvuBook(file, addToLibrary, initialProgress) {
         ])
         if (!bitmap || request !== renderRequest || destroyed) return
 
+        clearSelectionLookup(true)
         canvas.width = bitmap.width
         canvas.height = bitmap.height
         canvasContext.fillStyle = '#fff'
@@ -1149,19 +1359,158 @@ async function openDjvuBook(file, addToLibrary, initialProgress) {
         const pageLabel = `Page ${nextIndex + 1} of ${info.pageCount}`
         canvas.setAttribute('aria-label', pageLabel)
         const displaySize = fitPage(bitmap)
-        renderTextLayer(pageText, displaySize, pageLabel)
-        pageIndex = nextIndex
-        const fraction = info.pageCount === 1 ? 0 : pageIndex / (info.pageCount - 1)
-        updateLocation({
-            detail: {
-                fraction,
-                pageItem: { label: `${pageIndex + 1} of ${info.pageCount}` },
-                tocItem: tocItemAt(pageIndex),
-            },
-        })
+        renderTextLayer(pageText, displaySize, pageLabel, canvas, textLayer)
+        reportPage(nextIndex)
         void preRenderAround(pageIndex, direction)
     }
-    const navigate = index => renderPage(index).catch(error => showStatus(error.message, true))
+    const unloadScrollPage = page => {
+        if (page.dataset.rendered === 'false') return
+        page.dataset.renderRequest = String(++scrollPageRequest)
+        page.dataset.rendered = 'false'
+        page.replaceChildren()
+    }
+    const renderScrollPage = async page => {
+        if (page.dataset.rendered !== 'false') return
+        const generation = scrollGeneration
+        const request = String(++scrollPageRequest)
+        const index = Number(page.dataset.pageIndex)
+        page.dataset.renderRequest = request
+        page.dataset.rendered = 'loading'
+        const [bitmap, pageText] = await Promise.all([
+            loadPage(index),
+            loadPageText(index).catch(error => {
+                if (error?.name !== 'AbortError' && !destroyed) {
+                    console.warn(`Could not read DjVu page ${index + 1} text`, error)
+                }
+                return null
+            }),
+        ])
+        if (!bitmap
+            || destroyed
+            || generation !== scrollGeneration
+            || currentFlow !== 'scrolled'
+            || page.dataset.visible !== 'true'
+            || page.dataset.renderRequest !== request) {
+            if (page.dataset.renderRequest === request) page.dataset.rendered = 'false'
+            return
+        }
+
+        const scrollCanvas = document.createElement('canvas')
+        const scrollTextLayer = createDjvuTextLayer()
+        const context = scrollCanvas.getContext('2d', { alpha: false })
+        if (!context) throw new Error('This device cannot display DjVu pages')
+        scrollCanvas.className = 'djvu-page'
+        scrollCanvas.width = bitmap.width
+        scrollCanvas.height = bitmap.height
+        context.fillStyle = '#fff'
+        context.fillRect(0, 0, scrollCanvas.width, scrollCanvas.height)
+        context.drawImage(bitmap, 0, 0)
+        page.style.aspectRatio = `${bitmap.width} / ${bitmap.height}`
+        const displaySize = {
+            width: Math.max(1, page.clientWidth),
+            height: Math.max(1, page.clientHeight),
+        }
+        const pageLabel = `Page ${index + 1} of ${info.pageCount}`
+        scrollCanvas.setAttribute('aria-label', pageLabel)
+        page.replaceChildren(scrollCanvas, scrollTextLayer)
+        renderTextLayer(pageText, displaySize, pageLabel, scrollCanvas, scrollTextLayer)
+        page.dataset.rendered = 'true'
+    }
+    const updateScrolledPage = () => {
+        if (currentFlow !== 'scrolled' || !scrollPages.length) return
+        const center = view.scrollTop + (view.clientHeight / 2)
+        let low = 0
+        let high = scrollPages.length - 1
+        while (low < high) {
+            const middle = Math.floor((low + high) / 2)
+            const page = scrollPages[middle]
+            if (page.offsetTop + page.offsetHeight < center) low = middle + 1
+            else high = middle
+        }
+        const candidates = [scrollPages[low], scrollPages[Math.max(0, low - 1)]]
+        const current = candidates.reduce((closest, page) => {
+            const distance = Math.abs(center - (page.offsetTop + (page.offsetHeight / 2)))
+            return !closest || distance < closest.distance ? { page, distance } : closest
+        }, null)?.page
+        const index = Number(current?.dataset.pageIndex)
+        if (Number.isInteger(index) && index !== pageIndex) reportPage(index)
+    }
+    const onScrolled = () => {
+        clearTimeout(scrollTimer)
+        scrollTimer = setTimeout(updateScrolledPage, 120)
+    }
+    const stopScrolledFlow = () => {
+        scrollGeneration += 1
+        scrollObserver?.disconnect()
+        scrollObserver = null
+        clearTimeout(scrollTimer)
+        scrollTimer = null
+        view.removeEventListener('scroll', onScrolled)
+        scrollPages = []
+    }
+    const scrollToPage = async index => {
+        const nextIndex = Math.max(0, Math.min(info.pageCount - 1, index))
+        const page = scrollPages[nextIndex]
+        if (!page) return
+        const paddingTop = parseFloat(getComputedStyle(view).paddingTop) || 0
+        view.scrollTo({ top: Math.max(0, page.offsetTop - paddingTop), behavior: 'auto' })
+        page.dataset.visible = 'true'
+        reportPage(nextIndex)
+        await renderScrollPage(page)
+    }
+    const startScrolledFlow = async index => {
+        stopScrolledFlow()
+        const { width, height } = targetSize()
+        renderedWidth = width
+        renderedHeight = height
+        currentFlow = 'scrolled'
+        renderRequest += 1
+        view.classList.add('scrolled')
+        const aspectRatio = canvas.width > 0 && canvas.height > 0
+            ? `${canvas.width} / ${canvas.height}`
+            : '3 / 4'
+        const fragment = document.createDocumentFragment()
+        scrollPages = Array.from({ length: info.pageCount }, (_, pageNumber) => {
+            const page = document.createElement('div')
+            page.className = 'djvu-page-container djvu-scroll-page'
+            page.dataset.pageIndex = String(pageNumber)
+            page.dataset.rendered = 'false'
+            page.dataset.visible = 'false'
+            page.style.aspectRatio = aspectRatio
+            fragment.append(page)
+            return page
+        })
+        view.replaceChildren(fragment)
+        scrollObserver = new IntersectionObserver(entries => {
+            for (const entry of entries) {
+                const page = entry.target
+                page.dataset.visible = String(entry.isIntersecting)
+                if (entry.isIntersecting) {
+                    void renderScrollPage(page).catch(error => {
+                        if (!destroyed) showStatus(error.message, true)
+                    })
+                } else {
+                    unloadScrollPage(page)
+                }
+            }
+        }, { root: view, rootMargin: '100% 0px' })
+        for (const page of scrollPages) scrollObserver.observe(page)
+        view.addEventListener('scroll', onScrolled, { passive: true })
+        await new Promise(resolve => requestAnimationFrame(resolve))
+        await scrollToPage(index)
+    }
+    const showPaginatedFlow = async index => {
+        stopScrolledFlow()
+        currentFlow = 'paginated'
+        view.classList.remove('scrolled')
+        view.replaceChildren(pageContainer)
+        view.scrollTop = 0
+        await renderPage(index)
+    }
+    const goToPage = index => currentFlow === 'scrolled'
+        ? scrollToPage(index)
+        : renderPage(index)
+    const navigate = index => goToPage(index).catch(error => showStatus(error.message, true))
     view.goLeft = () => navigate(pageIndex - 1)
     view.goRight = () => navigate(pageIndex + 1)
     view.goTo = target => {
@@ -1169,21 +1518,37 @@ async function openDjvuBook(file, addToLibrary, initialProgress) {
         if (!Number.isInteger(index)) {
             return Promise.reject(new Error('This DjVu chapter has no page destination'))
         }
-        return renderPage(index)
+        return goToPage(index)
     }
-    view.goToFraction = fraction => renderPage(Math.round(
+    view.goToFraction = fraction => goToPage(Math.round(
         Math.max(0, Math.min(1, fraction)) * (info.pageCount - 1),
     ))
     view.progressLabelForFraction = fraction => {
         const index = Math.round(Math.max(0, Math.min(1, fraction)) * (info.pageCount - 1))
-        return `Page ${index + 1} of ${info.pageCount}`
+        const tocItem = tocItemAt(index)
+        const chapterLabel = tocItem?.label ? displayText(tocItem.label) : null
+        return chapterLabel
+            ? `${chapterLabel} · Page ${index + 1} of ${info.pageCount}`
+            : `Page ${index + 1} of ${info.pageCount}`
+    }
+    view.setFlow = flow => {
+        const nextFlow = flow === 'scrolled' ? 'scrolled' : 'paginated'
+        if (nextFlow === currentFlow) return Promise.resolve()
+        return nextFlow === 'scrolled'
+            ? startScrolledFlow(pageIndex)
+            : showPaginatedFlow(pageIndex)
     }
 
     const onResize = () => {
         clearTimeout(resizeTimer)
         resizeTimer = setTimeout(() => {
             const { width, height } = targetSize()
-            if (width !== renderedWidth || height !== renderedHeight) navigate(pageIndex)
+            if (width === renderedWidth && height === renderedHeight) return
+            if (currentFlow === 'scrolled') {
+                void startScrolledFlow(pageIndex).catch(error => showStatus(error.message, true))
+            } else {
+                navigate(pageIndex)
+            }
         }, 180)
     }
     addEventListener('resize', onResize)
@@ -1204,6 +1569,7 @@ async function openDjvuBook(file, addToLibrary, initialProgress) {
         }
     }, { passive: true })
     view.addEventListener('touchend', event => {
+        if (currentFlow === 'scrolled') return
         const selection = document.getSelection()
         if (selection && !selection.isCollapsed) return
         const touch = event.changedTouches[0]
@@ -1229,6 +1595,7 @@ async function openDjvuBook(file, addToLibrary, initialProgress) {
         destroy: () => {
             destroyed = true
             renderRequest += 1
+            stopScrolledFlow()
             pageAbortController.abort()
             clearTimeout(resizeTimer)
             removeEventListener('resize', onResize)
@@ -1240,7 +1607,9 @@ async function openDjvuBook(file, addToLibrary, initialProgress) {
         },
     }
 
-    const initialPage = Math.round(initialProgress * (info.pageCount - 1))
+    const initialPage = Number.isInteger(Number(initialLocation))
+        ? Math.max(0, Math.min(info.pageCount - 1, Number(initialLocation)))
+        : Math.round(initialProgress * (info.pageCount - 1))
     await renderPage(initialPage)
     const adjacentPage = initialPage < info.pageCount - 1 ? initialPage + 1 : initialPage - 1
     if (adjacentPage >= 0) await loadPage(adjacentPage)
@@ -1273,6 +1642,7 @@ async function openDjvuBook(file, addToLibrary, initialProgress) {
 
     elements.library.hidden = true
     elements.readerShell.hidden = false
+    document.body.classList.add('in-reader')
     readerControlsVisible = true
     applyReaderControlVisibility()
     setNativeReaderMode(true)
@@ -1288,11 +1658,16 @@ async function openDjvuBook(file, addToLibrary, initialProgress) {
     } else {
         hideStatus()
     }
+    startReadingSessionTracker()
 }
 
 async function closeCurrentBook() {
+    document.body.classList.remove('in-reader')
+    stopReadingSessionTracker()
+    hideQuickReturnButton()
     if (elements.chaptersDialog.open) elements.chaptersDialog.close()
     if (elements.dictionaryDialog.open) elements.dictionaryDialog.close()
+    if (elements.completionDialog.open) elements.completionDialog.close()
     clearSelectionLookup(true)
     renderChapters([])
     await flushBookProgress()
@@ -1308,8 +1683,10 @@ async function closeCurrentBook() {
     }
     currentBookId = null
     currentBookStored = false
+    currentBookLocation = null
     currentProgressFraction = 0
     sliderLocationTotal = 0
+    currentPageLabel = null
     clearTimeout(sliderTooltipTimer)
     sliderTooltipTimer = null
     elements.progressTooltip.hidden = true
@@ -1332,6 +1709,10 @@ function sliderPositionLabel(fraction) {
     if (pageCount) {
         const page = Math.round(clamped * (pageCount - 1)) + 1
         return `Page ${page} of ${pageCount}`
+    }
+
+    if (currentPageLabel && Math.abs(clamped - currentProgressFraction) < 0.02) {
+        return `Page ${currentPageLabel}`
     }
 
     if (sliderLocationTotal > 0) {
@@ -1364,7 +1745,7 @@ function hideSliderTooltip(delay = 0) {
     }, delay)
 }
 
-async function openBook(file, { addToLibrary = true, initialProgress = null } = {}) {
+async function openBook(file, { addToLibrary = true, initialProgress = null, initialLocation = null } = {}) {
     if (!file) return
     if (!isSupported(file)) {
         showStatus(
@@ -1373,7 +1754,6 @@ async function openBook(file, { addToLibrary = true, initialProgress = null } = 
         )
         return
     }
-
     showStatus(`Opening ${file.name}…`)
     await closeCurrentBook()
     currentKind = fileKind(file)
@@ -1384,11 +1764,11 @@ async function openBook(file, { addToLibrary = true, initialProgress = null } = 
         Number.isFinite(initialProgress) ? initialProgress : Number(libraryRecord?.progress) || 0,
     ))
     currentProgressFraction = resumeProgress
+    currentBookLocation = initialLocation != null ? String(initialLocation) : (libraryRecord?.location ?? null)
     currentBookStored = !addToLibrary || Boolean(libraryRecord)
-
     if (currentKind === 'djvu') {
         try {
-            await openDjvuBook(file, addToLibrary, resumeProgress)
+            await openDjvuBook(file, addToLibrary, resumeProgress, currentBookLocation)
         } catch (error) {
             console.error(error)
             try {
@@ -1411,13 +1791,14 @@ async function openBook(file, { addToLibrary = true, initialProgress = null } = 
         await view.open(await bookSource(file, currentKind))
         elements.library.hidden = true
         elements.readerShell.hidden = false
+        document.body.classList.add('in-reader')
         readerControlsVisible = true
         applyReaderControlVisibility()
         setNativeReaderMode(true)
         applyPreferences()
-        await view.renderer.next()
-        if (resumeProgress > 0) await goToReadingFraction(view, resumeProgress)
-
+        const targetLocation = currentBookLocation
+            || (resumeProgress > 0 ? { fraction: resumeProgress } : null)
+        await view.init({ lastLocation: targetLocation })
         renderChapters(view.book?.toc)
         const metadata = view.book?.metadata || {}
         const title = displayText(metadata.title) || titleFromFile(file.name)
@@ -1452,6 +1833,7 @@ async function openBook(file, { addToLibrary = true, initialProgress = null } = 
         } else {
             hideStatus()
         }
+        startReadingSessionTracker()
     } catch (error) {
         console.error(error)
         try {
@@ -1485,11 +1867,26 @@ function updateLocation({ detail }) {
     const locationTotal = detail.location?.total
     sliderLocationTotal = Number.isInteger(locationTotal) && locationTotal > 0 ? locationTotal : 0
     currentProgressFraction = fraction
-    scheduleBookProgress(fraction)
+    const locationIdentifier = detail.cfi || (fixedLayoutLocation ? sectionIndex : null)
+    if (locationIdentifier != null) currentBookLocation = String(locationIdentifier)
+    scheduleBookProgress(fraction, currentBookLocation)
+    const isAtEnd = fraction >= 0.99
+    if (isAtEnd && currentBookId && currentBookStored && !completedPromptedBooks.has(currentBookId)) {
+        const record = libraryBooks.find(book => book.id === currentBookId)
+        if (record && !record.finished) {
+            completedPromptedBooks.add(currentBookId)
+            elements.completionDialog?.showModal()
+        }
+    }
     const percent = Math.max(0, Math.min(100, Math.round(fraction * 100)))
     const fixedPage = fixedLayoutLocation ? `${sectionIndex + 1} of ${sectionCount}` : null
     const page = detail.pageItem?.label || fixedPage || detail.location?.current
-    elements.progressText.textContent = page ? `${percent}% · Page ${page}` : `${percent}% read`
+    currentPageLabel = page != null ? displayText(page) : null
+    const tocLabel = detail.tocItem?.label ? displayText(detail.tocItem.label) : null
+    const pageDisplay = currentPageLabel ? `Page ${currentPageLabel}` : `${percent}% read`
+    elements.progressText.textContent = tocLabel && currentPageLabel
+        ? `${percent}% · ${pageDisplay} · ${tocLabel}`
+        : (currentPageLabel ? `${percent}% · ${pageDisplay}` : `${percent}% read`)
     updateSliderTooltip(fraction)
     const currentHref = detail.tocItem?.href
     for (const button of elements.chapterList.querySelectorAll('[data-href]')) {
@@ -1515,11 +1912,8 @@ elements.openButton.addEventListener('click', () => {
     }
 })
 $('#library-empty-button').addEventListener('click', chooseBook)
-$('#previous-button').addEventListener('click', () => readerView?.goLeft())
-$('#next-button').addEventListener('click', () => readerView?.goRight())
 $('#settings-button').addEventListener('click', () => elements.settings.showModal())
 elements.settings.addEventListener('click', event => {
-    if (event.target !== elements.settings) return
     const bounds = elements.settings.getBoundingClientRect()
     const outside = event.clientX < bounds.left
         || event.clientX > bounds.right
@@ -1529,6 +1923,20 @@ elements.settings.addEventListener('click', event => {
 })
 $('#chapters-button').addEventListener('click', () => {
     if (!elements.chaptersButton.disabled) elements.chaptersDialog.showModal()
+})
+elements.quickReturnButton.addEventListener('click', async () => {
+    if (quickReturnTarget == null || !readerView) return
+    const target = quickReturnTarget
+    hideQuickReturnButton()
+    try {
+        if (typeof target === 'number') {
+            await goToReadingFraction(readerView, target)
+        } else {
+            await readerView.goTo(target)
+        }
+    } catch (error) {
+        console.warn('Could not return to previous location', error)
+    }
 })
 elements.selectionLookupButton.addEventListener('click', showDictionaryLookup)
 elements.dictionaryDialog.addEventListener('click', event => {
@@ -1545,36 +1953,102 @@ elements.dictionaryDialog.addEventListener('close', () => {
     dictionaryLookupText = ''
     clearSelectionLookup(true)
 })
+elements.completionConfirmButton.addEventListener('click', async () => {
+    elements.completionDialog.close()
+    if (!currentBookId) return
+    try {
+        await saveBookFinished(currentBookId)
+        const record = libraryBooks.find(book => book.id === currentBookId)
+        if (record) record.finished = true
+        showStatus('Marked book as finished.', false, 2500)
+        await renderLibrary({ hydrateCovers: false })
+    } catch (error) {
+        showStatus(`Could not mark this book as finished: ${error.message}`, true)
+    }
+})
+elements.completionDismissButton?.addEventListener('click', () => {
+    elements.completionDialog?.close()
+})
 elements.themeButton.addEventListener('click', () => {
     updatePreference('theme', nextTheme(resolvedTheme()))
 })
 
 const sliderFraction = event => Number(event.target.value)
+let sliderGestureActive = false
+let sliderGestureCancelled = false
+let sliderGestureStartX = 0
+let sliderGestureStartY = 0
+let sliderGestureInitialFraction = 0
+
 const navigateToSliderPosition = event =>
     goToReadingFraction(readerView, sliderFraction(event))?.catch(console.error)
+
+const restoreSliderGestureStart = () => {
+    elements.progressSlider.value = String(sliderGestureInitialFraction)
+    updateSliderTooltip(sliderGestureInitialFraction)
+}
+
 elements.progressSlider.addEventListener('focus', event => {
     showSliderTooltip(sliderFraction(event))
 })
 elements.progressSlider.addEventListener('pointerdown', event => {
+    sliderGestureActive = true
+    sliderGestureCancelled = false
+    sliderGestureStartX = event.clientX
+    sliderGestureStartY = event.clientY
+    sliderGestureInitialFraction = currentProgressFraction
     showSliderTooltip(sliderFraction(event))
+})
+elements.progressSlider.addEventListener('pointermove', event => {
+    if (!sliderGestureActive) return
+    const deltaX = Math.abs(event.clientX - sliderGestureStartX)
+    const deltaY = event.clientY - sliderGestureStartY
+    if (deltaY < -12 && Math.abs(deltaY) > deltaX) {
+        sliderGestureCancelled = true
+        restoreSliderGestureStart()
+        hideSliderTooltip()
+    }
 })
 elements.progressSlider.addEventListener('input', event => {
+    if (sliderGestureCancelled) return
     showSliderTooltip(sliderFraction(event))
-    if (currentKind !== 'djvu') navigateToSliderPosition(event)
+    if (!sliderGestureActive) navigateToSliderPosition(event)
 })
 elements.progressSlider.addEventListener('change', event => {
+    if (sliderGestureActive || sliderGestureCancelled) return
     showSliderTooltip(sliderFraction(event))
-    if (currentKind === 'djvu') navigateToSliderPosition(event)
+    navigateToSliderPosition(event)
     hideSliderTooltip(1400)
 })
-elements.progressSlider.addEventListener('pointerup', () => hideSliderTooltip(1400))
-elements.progressSlider.addEventListener('pointercancel', () => hideSliderTooltip())
-elements.progressSlider.addEventListener('blur', () => hideSliderTooltip())
+elements.progressSlider.addEventListener('pointerup', event => {
+    if (!sliderGestureActive) return
+    sliderGestureActive = false
+    if (sliderGestureCancelled) {
+        restoreSliderGestureStart()
+    } else {
+        navigateToSliderPosition(event)
+    }
+    sliderGestureCancelled = false
+    hideSliderTooltip(1400)
+})
+elements.progressSlider.addEventListener('pointercancel', () => {
+    if (sliderGestureActive) restoreSliderGestureStart()
+    sliderGestureActive = false
+    sliderGestureCancelled = false
+    hideSliderTooltip()
+})
+elements.progressSlider.addEventListener('blur', () => {
+    if (sliderGestureActive) restoreSliderGestureStart()
+    sliderGestureActive = false
+    sliderGestureCancelled = false
+    hideSliderTooltip()
+})
 elements.fileInput.addEventListener('change', event => {
     openBook(event.target.files?.[0])
     event.target.value = ''
 })
 elements.themeSelect.addEventListener('change', event => updatePreference('theme', event.target.value))
+elements.flowSelect.addEventListener('change', event => updatePreference('flow', event.target.value))
 elements.fontSelect.addEventListener('change', event => updatePreference('font', event.target.value))
 elements.fontSizeInput.addEventListener('input', event => updatePreference('fontSize', Number(event.target.value)))
 elements.lineHeightInput.addEventListener('input', event => updatePreference('lineHeight', Number(event.target.value)))
@@ -1600,8 +2074,19 @@ document.addEventListener('selectionchange', () => {
 document.addEventListener('pointerup', () => {
     if (currentKind === 'djvu') scheduleSelectionLookup(document, 0)
 })
+addEventListener('readerdisplayfeatureschange', applyDisplayCutout)
+addEventListener('resize', applyDisplayCutout)
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
     if (preferences.theme === 'system') applyPreferences()
+})
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) void flushBookProgress()
+})
+addEventListener('pagehide', () => {
+    void flushBookProgress()
+})
+addEventListener('beforeunload', () => {
+    void flushBookProgress()
 })
 
 async function openPendingAndroidBook() {
@@ -1620,6 +2105,7 @@ async function openPendingAndroidBook() {
 }
 
 async function initializeApp() {
+    applyDisplayCutout()
     applyPreferences()
     await persistStorage()
     try {
@@ -1630,4 +2116,5 @@ async function initializeApp() {
     await openPendingAndroidBook()
 }
 
+    updateStreakDisplay()
 initializeApp()
