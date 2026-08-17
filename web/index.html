@@ -16,8 +16,18 @@
                 <strong id="book-title">Reader</strong>
                 <span id="book-progress" aria-live="polite">No book open</span>
             </div>
-            <button id="theme-button" class="icon-button" type="button" aria-label="Switch color theme" title="Switch color theme">◐</button>
-            <button id="settings-button" class="icon-button" type="button" aria-label="Reading settings" title="Reading settings">Aa</button>
+            <button id="theme-button" class="icon-button" type="button" aria-label="Switch color theme" title="Switch color theme">
+                <svg class="app-bar-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <circle cx="12" cy="12" r="9"></circle>
+                    <path class="theme-icon-fill" d="M12 3a9 9 0 0 0 0 18Z"></path>
+                </svg>
+            </button>
+            <button id="settings-button" class="icon-button" type="button" aria-label="Reading settings" title="Reading settings">
+                <svg class="app-bar-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <circle cx="12" cy="12" r="3"></circle>
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06-2.12 2.12-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V20h-3v-.09a1.65 1.65 0 0 0-1.08-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06-2.12-2.12.06-.06A1.65 1.65 0 0 0 7 14.79a1.65 1.65 0 0 0-1.51-1H5v-3h.09A1.65 1.65 0 0 0 6.6 9.71a1.65 1.65 0 0 0-.33-1.82l-.06-.06 2.12-2.12.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V4h3v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06 2.12 2.12-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H20v3h-.09a1.65 1.65 0 0 0-1.51 1Z"></path>
+                </svg>
+            </button>
         </header>
 
         <section id="library" class="library-view" aria-labelledby="library-title">
@@ -49,8 +59,8 @@
                     <output id="progress-tooltip" class="progress-tooltip" hidden></output>
                     <input id="progress-slider" type="range" min="0" max="1" step="0.001" value="0" aria-label="Reading progress">
                 </div>
-                <button id="reader-settings-button" class="nav-button settings-button" type="button" aria-label="Reading settings" title="Reading settings">Aa</button>
                 <button id="next-button" class="nav-button" type="button" aria-label="Next page">→</button>
+            </nav>
         </section>
 
         <input id="file-input" type="file" hidden accept=".epub,.pdf,.djvu,.djv,.mobi,.prc,.azw,.azw3,.fb2,.fbz,.fb2.zip,.cbz,.txt,.text,.md,.html,.htm,.xhtml,application/epub+zip,application/pdf,image/vnd.djvu,application/x-mobipocket-ebook,application/vnd.amazon.ebook,application/vnd.comicbook+zip,application/x-fictionbook+xml,text/plain,text/html">
@@ -71,6 +81,14 @@
                         <option value="light">Light</option>
                         <option value="dark">Dark</option>
                         <option value="night">Night</option>
+                    </select>
+                </label>
+
+                <label class="field">
+                    <span>Reading direction</span>
+                    <select id="flow-select">
+                        <option value="paginated">Horizontal pages</option>
+                        <option value="scrolled">Vertical scroll</option>
                     </select>
                 </label>
 

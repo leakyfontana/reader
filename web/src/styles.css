@@ -131,6 +131,21 @@ body.in-reader .app-bar {
     cursor: pointer;
 }
 
+.app-bar-icon {
+    width: 22px;
+    height: 22px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.theme-icon-fill {
+    fill: currentColor;
+    stroke: none;
+}
+
 .icon-button:active,
 .nav-button:active {
     background: var(--surface-strong);
@@ -507,8 +522,7 @@ body.reader-controls-hidden .reader-nav {
     left: 0;
     right: 0;
     z-index: 10;
-    display: grid;
-    grid-template-columns: 52px 44px minmax(0, 1fr) 44px 52px;
+    grid-template-columns: 52px 44px minmax(0, 1fr) 52px;
     align-items: center;
     padding: 4px 8px max(4px, env(safe-area-inset-bottom));
     border-top: 1px solid var(--line);
@@ -518,7 +532,7 @@ body.reader-controls-hidden .reader-nav {
     transition: opacity 0.18s ease, transform 0.18s ease, visibility 0.18s;
 }
 .reader-nav.chapters-unavailable {
-    grid-template-columns: 52px minmax(0, 1fr) 44px 52px;
+    grid-template-columns: 52px minmax(0, 1fr) 52px;
 }
 
 .progress-control {

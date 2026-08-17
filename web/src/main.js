@@ -20,6 +20,7 @@ const THEME_CYCLE = ['light', 'dark', 'night']
 const PREFERENCE_KEY = 'reader.preferences.v1'
 const defaults = {
     theme: 'system',
+    flow: 'paginated',
     font: 'publisher',
     fontSize: 100,
     lineHeight: 1.5,
@@ -51,9 +52,9 @@ const elements = {
     status: $('#status'),
     settings: $('#settings-dialog'),
     settingsButton: $('#settings-button'),
-    readerSettingsButton: $('#reader-settings-button'),
     themeButton: $('#theme-button'),
     themeSelect: $('#theme-select'),
+    flowSelect: $('#flow-select'),
     fontSelect: $('#font-select'),
     fontSizeInput: $('#font-size-input'),
     fontSizeOutput: $('#font-size-output'),
@@ -181,6 +182,7 @@ function applyPreferences() {
     document.querySelector('meta[name="color-scheme"]').content = theme === 'light' ? 'light' : 'dark'
 
     elements.themeSelect.value = preferences.theme
+    elements.flowSelect.value = preferences.flow || 'paginated'
     const upcomingTheme = nextTheme(theme)
     elements.themeButton.title = `Switch to ${upcomingTheme} theme`
     elements.themeButton.setAttribute('aria-label', `Switch to ${upcomingTheme} theme`)
@@ -197,6 +199,9 @@ function applyPreferences() {
     if (readerView) {
         readerView.classList.toggle('pdf', currentKind === 'pdf')
         readerView.renderer?.setStyles?.(bookStyles())
+        if (readerView.renderer?.setAttribute && currentKind !== 'djvu' && currentKind !== 'pdf') {
+            readerView.renderer.setAttribute('flow', preferences.flow || 'paginated')
+        }
     }
 }
 
@@ -1525,7 +1530,6 @@ $('#library-empty-button').addEventListener('click', chooseBook)
 $('#previous-button').addEventListener('click', () => readerView?.goLeft())
 $('#next-button').addEventListener('click', () => readerView?.goRight())
 $('#settings-button').addEventListener('click', () => elements.settings.showModal())
-elements.readerSettingsButton?.addEventListener('click', () => elements.settings.showModal())
 elements.settings.addEventListener('click', event => {
     const bounds = elements.settings.getBoundingClientRect()
     const outside = event.clientX < bounds.left
@@ -1582,6 +1586,7 @@ elements.fileInput.addEventListener('change', event => {
     event.target.value = ''
 })
 elements.themeSelect.addEventListener('change', event => updatePreference('theme', event.target.value))
+elements.flowSelect.addEventListener('change', event => updatePreference('flow', event.target.value))
 elements.fontSelect.addEventListener('change', event => updatePreference('font', event.target.value))
 elements.fontSizeInput.addEventListener('input', event => updatePreference('fontSize', Number(event.target.value)))
 elements.lineHeightInput.addEventListener('input', event => updatePreference('lineHeight', Number(event.target.value)))
