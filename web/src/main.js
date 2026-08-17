@@ -1527,8 +1527,6 @@ elements.openButton.addEventListener('click', () => {
     }
 })
 $('#library-empty-button').addEventListener('click', chooseBook)
-$('#previous-button').addEventListener('click', () => readerView?.goLeft())
-$('#next-button').addEventListener('click', () => readerView?.goRight())
 $('#settings-button').addEventListener('click', () => elements.settings.showModal())
 elements.settings.addEventListener('click', event => {
     const bounds = elements.settings.getBoundingClientRect()

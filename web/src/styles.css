@@ -522,9 +522,11 @@ body.reader-controls-hidden .reader-nav {
     left: 0;
     right: 0;
     z-index: 10;
-    grid-template-columns: 52px 44px minmax(0, 1fr) 52px;
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr);
     align-items: center;
-    padding: 4px 8px max(4px, env(safe-area-inset-bottom));
+    gap: 8px;
+    padding: 4px 12px max(4px, env(safe-area-inset-bottom));
     border-top: 1px solid var(--line);
     background: color-mix(in srgb, var(--surface), transparent 4%);
     backdrop-filter: blur(12px);
@@ -532,7 +534,9 @@ body.reader-controls-hidden .reader-nav {
     transition: opacity 0.18s ease, transform 0.18s ease, visibility 0.18s;
 }
 .reader-nav.chapters-unavailable {
-    grid-template-columns: 52px minmax(0, 1fr) 52px;
+    grid-template-columns: minmax(0, 1fr);
+    padding-right: 16px;
+    padding-left: 16px;
 }
 
 .progress-control {
