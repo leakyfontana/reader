@@ -14,7 +14,6 @@ export function normalizeLookupTerm(value) {
         .replace(/\u00ad/g, '')
         .replace(/[‘’]/g, "'")
         .replace(/[‐‑‒–—]/g, '-')
-        .replace(/(\p{L})-\s*(?:\r?\n|\f)\s*(\p{L})/gu, '$1$2')
         .replaceAll('_', ' ')
         .replace(/\s+/g, ' ')
         .trim()
@@ -116,24 +115,8 @@ async function resolveLemmas(term) {
     if (initialBucket.entries[term]) addCandidate(lemmas, term)
     for (const lemma of aliasValues(initialBucket.aliases[term])) addCandidate(lemmas, lemma)
 
-    if (!lemmas.length && term.includes('-')) {
-        const unhyphenated = term.replaceAll('-', '')
-        const unhyphenatedBucket = await loadBucket(bucketName(unhyphenated))
-        if (unhyphenatedBucket.entries[unhyphenated]) addCandidate(lemmas, unhyphenated)
-        for (const lemma of aliasValues(unhyphenatedBucket.aliases[unhyphenated])) {
-            addCandidate(lemmas, lemma)
-        }
-    }
-
     if (!lemmas.length) {
-        const candidates = inflectionCandidates(term)
-        if (term.includes('-')) {
-            const unhyphenated = term.replaceAll('-', '')
-            for (const candidate of inflectionCandidates(unhyphenated)) {
-                addCandidate(candidates, candidate)
-            }
-        }
-        for (const candidate of candidates) {
+        for (const candidate of inflectionCandidates(term)) {
             const bucket = await loadBucket(bucketName(candidate))
             if (bucket.entries[candidate]) addCandidate(lemmas, candidate)
             for (const lemma of aliasValues(bucket.aliases[candidate])) addCandidate(lemmas, lemma)

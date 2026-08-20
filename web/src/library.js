@@ -84,8 +84,7 @@ export async function saveBook(file, details) {
         cover: details.cover ?? null,
         coverChecked: true,
         progress,
-        finished: previous?.finished === true,
-        location: previous?.location ?? null,
+        finished: previous?.finished === true || progress >= 0.999,
         lastReadAt: previous?.lastReadAt ?? null,
     }
     metadataStore.put(record)
@@ -105,21 +104,7 @@ export async function saveBookCover(id, cover) {
     await done
 }
 
-export async function saveBookFinished(id, finished = true) {
-    const database = await openDatabase()
-    const transaction = database.transaction(METADATA_STORE, 'readwrite')
-    const done = transactionDone(transaction)
-    const store = transaction.objectStore(METADATA_STORE)
-    const metadata = await requestResult(store.get(id))
-    if (!metadata) throw new Error('The stored book metadata is unavailable')
-    store.put({
-        ...metadata,
-        finished: Boolean(finished),
-    })
-    await done
-}
-
-export async function saveBookProgress(id, fraction, location = null) {
+export async function saveBookProgress(id, fraction) {
     const database = await openDatabase()
     const transaction = database.transaction(METADATA_STORE, 'readwrite')
     const done = transactionDone(transaction)
@@ -130,8 +115,7 @@ export async function saveBookProgress(id, fraction, location = null) {
     store.put({
         ...metadata,
         progress,
-        location: location != null ? String(location) : (metadata.location ?? null),
-        finished: metadata.finished === true,
+        finished: metadata.finished === true || progress >= 0.999,
         lastReadAt: Date.now(),
     })
     await done

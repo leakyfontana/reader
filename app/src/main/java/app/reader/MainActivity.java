@@ -4,7 +4,6 @@ import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.Intent;
 import android.graphics.Bitmap;
-import android.graphics.Rect;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Bundle;
@@ -19,7 +18,6 @@ import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
-import android.view.DisplayCutout;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowInsets;
@@ -58,22 +56,15 @@ public final class MainActivity extends Activity {
     private String djvuBookKey;
 
     private boolean readerMode;
-    private volatile String displayCutoutJson = "{}";
     @SuppressLint("SetJavaScriptEnabled")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            WindowManager.LayoutParams attributes = getWindow().getAttributes();
-            attributes.layoutInDisplayCutoutMode = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
-                    ? WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
-                    : WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
-            getWindow().setAttributes(attributes);
-        }
 
         webView = new WebView(this);
         setContentView(webView);
         applySystemBarInsets();
+
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
@@ -93,26 +84,24 @@ public final class MainActivity extends Activity {
     @SuppressWarnings("deprecation")
     private void applySystemBarInsets() {
         webView.setOnApplyWindowInsetsListener((view, windowInsets) -> {
-            updateDisplayCutout(windowInsets);
-            int left = 0;
-            int top = 0;
-            int right = 0;
-            int bottom = 0;
-            if (!readerMode) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    android.graphics.Insets insets = windowInsets.getInsets(
-                            WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
-                    left = insets.left;
-                    top = insets.top;
-                    right = insets.right;
-                    bottom = insets.bottom;
-                } else {
-                    left = windowInsets.getSystemWindowInsetLeft();
-                    top = windowInsets.getSystemWindowInsetTop();
-                    right = windowInsets.getSystemWindowInsetRight();
-                    bottom = windowInsets.getSystemWindowInsetBottom();
-                }
+            int left;
+            int top;
+            int right;
+            int bottom;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                android.graphics.Insets insets = windowInsets.getInsets(
+                        WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
+                left = insets.left;
+                top = insets.top;
+                right = insets.right;
+                bottom = insets.bottom;
+            } else {
+                left = windowInsets.getSystemWindowInsetLeft();
+                top = windowInsets.getSystemWindowInsetTop();
+                right = windowInsets.getSystemWindowInsetRight();
+                bottom = windowInsets.getSystemWindowInsetBottom();
             }
+
             ViewGroup.MarginLayoutParams layout = (ViewGroup.MarginLayoutParams) view.getLayoutParams();
             if (layout.leftMargin != left
                     || layout.topMargin != top
@@ -124,38 +113,6 @@ public final class MainActivity extends Activity {
             return windowInsets;
         });
         webView.requestApplyInsets();
-    }
-
-    private void updateDisplayCutout(WindowInsets windowInsets) {
-        JSONObject value = new JSONObject();
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            DisplayCutout displayCutout = windowInsets.getDisplayCutout();
-            if (displayCutout != null) {
-                float density = getResources().getDisplayMetrics().density;
-                int viewportWidth = webView.getWidth();
-                if (viewportWidth <= 0) {
-                    viewportWidth = getResources().getDisplayMetrics().widthPixels;
-                }
-                for (Rect bounds : displayCutout.getBoundingRects()) {
-                    if (bounds.top > 0 || bounds.bottom <= 0) continue;
-                    try {
-                        value.put("left", bounds.left / density);
-                        value.put("right", bounds.right / density);
-                        value.put("bottom", bounds.bottom / density);
-                        value.put("viewportWidth", viewportWidth / density);
-                    } catch (JSONException ignored) {
-                        value = new JSONObject();
-                    }
-                    break;
-                }
-            }
-        }
-        String nextValue = value.toString();
-        if (nextValue.equals(displayCutoutJson)) return;
-        displayCutoutJson = nextValue;
-        webView.evaluateJavascript(
-                "globalThis.dispatchEvent(new Event('readerdisplayfeatureschange'))",
-                null);
     }
 
     @SuppressWarnings("deprecation")
@@ -201,11 +158,6 @@ public final class MainActivity extends Activity {
         @JavascriptInterface
         public void setReaderMode(boolean enabled) {
             webView.post(() -> MainActivity.this.setReaderMode(enabled));
-        }
-
-        @JavascriptInterface
-        public String getDisplayCutout() {
-            return displayCutoutJson;
         }
 
         @JavascriptInterface

@@ -9,7 +9,6 @@
     --accent: #57737a;
     --accent-ink: #c9fbff;
     --shadow: 0 16px 50px rgb(4 15 15 / 16%);
-    --display-cutout-bottom: 0px;
     font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
 }
 
@@ -84,55 +83,6 @@ input:focus-visible {
     padding: max(6px, env(safe-area-inset-top)) 8px 6px;
     border-bottom: 1px solid var(--line);
     background: color-mix(in srgb, var(--surface), transparent 4%);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    transition: opacity 0.18s ease, transform 0.18s ease, visibility 0.18s;
-}
-
-body:has(#reader-shell:not([hidden])) .app-bar,
-body.in-reader .app-bar {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-}
-
-:root[data-display-cutout='top'] body.in-reader .app-bar {
-    grid-template-rows: var(--display-cutout-bottom) auto;
-    min-height: 0;
-    padding: 0 8px 6px;
-}
-
-:root[data-display-cutout='top'] body.in-reader #open-button {
-    grid-column: 1;
-    grid-row: 1;
-    align-self: center;
-}
-
-:root[data-display-cutout='top'] body.in-reader #theme-button {
-    grid-column: 3;
-    grid-row: 1;
-    align-self: center;
-}
-
-:root[data-display-cutout='top'] body.in-reader #settings-button {
-    grid-column: 4;
-    grid-row: 1;
-    align-self: center;
-}
-
-:root[data-display-cutout='top'] body.in-reader .title-group {
-    display: grid;
-    grid-column: 1 / -1;
-    grid-row: 2;
-    grid-template-columns: minmax(0, 1fr) minmax(0, auto);
-    align-items: baseline;
-    padding: 2px 10px 0;
-    column-gap: 12px;
-}
-
-:root[data-display-cutout='top'] body.in-reader #book-progress {
-    max-width: 45vw;
 }
 
 .title-group {
@@ -171,27 +121,6 @@ body.in-reader .app-bar {
     cursor: pointer;
 }
 
-.app-bar-icon {
-    width: 22px;
-    height: 22px;
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 2;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-}
-
-.theme-icon-fill {
-    fill: currentColor;
-    stroke: none;
-}
-
-.settings-icon {
-    fill: currentColor;
-    fill-rule: evenodd;
-    stroke: none;
-}
-
 .icon-button:active,
 .nav-button:active {
     background: var(--surface-strong);
@@ -226,18 +155,6 @@ body.in-reader .app-bar {
     color: var(--muted);
 }
 
-.streak-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    margin: 4px 0 0;
-    padding: 4px 10px;
-    border-radius: 999px;
-    background: color-mix(in srgb, var(--accent) 15%, transparent);
-    color: var(--accent);
-    font-size: 0.85rem;
-    font-weight: 600;
-}
 
 .plus-button {
     position: relative;
@@ -426,46 +343,34 @@ body.in-reader .app-bar {
 }
 
 .reader-shell {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
+    height: calc(100% - 64px);
 }
 
 .reader-shell:not([hidden]) {
-    display: block;
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) 56px;
 }
 
-body.reader-controls-hidden .app-bar {
-    opacity: 0;
-    pointer-events: none;
-    transform: translateY(-100%);
-    visibility: hidden;
-}
-
+body.reader-controls-hidden .app-bar,
 body.reader-controls-hidden .reader-nav {
-    opacity: 0;
-    pointer-events: none;
-    transform: translateY(100%);
-    visibility: hidden;
+    display: none;
 }
+
+body.reader-controls-hidden .reader-shell {
+    height: 100%;
+    grid-template-rows: minmax(0, 1fr);
+}
+
 .reader {
     position: relative;
-    width: 100%;
-    height: 100%;
     min-height: 0;
     background: var(--paper);
-    padding: 0;
 }
 
 .reader foliate-view {
     display: block;
     width: 100%;
     height: 100%;
-}
-
-.reader[data-flow='scrolled'] foliate-view {
-    touch-action: pan-y;
 }
 
 .djvu-view {
@@ -475,30 +380,6 @@ body.reader-controls-hidden .reader-nav {
     overflow: hidden;
     place-items: center;
     touch-action: pan-y;
-    padding: 4px;
-    box-sizing: border-box;
-}
-
-.djvu-view.scrolled {
-    display: block;
-    box-sizing: border-box;
-    padding: 4px 0;
-    overflow-x: hidden;
-    overflow-y: auto;
-    overscroll-behavior-y: contain;
-    place-items: initial;
-    scroll-padding-top: 4px;
-    touch-action: pan-y;
-}
-
-.djvu-scroll-page {
-    width: 100%;
-    max-width: 900px;
-    margin-inline: auto;
-}
-
-.djvu-scroll-page + .djvu-scroll-page {
-    margin-top: 12px;
 }
 
 .djvu-page-container {
@@ -565,7 +446,8 @@ body.reader-controls-hidden .reader-nav {
     display: inline-block;
     width: 0;
     vertical-align: top;
-    pointer-events: none;
+    user-select: none;
+    -webkit-user-select: none;
 }
 
 .djvu-text-layer span::selection {
@@ -603,26 +485,16 @@ body.reader-controls-hidden .reader-nav {
 }
 
 .reader-nav {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    z-index: 10;
     display: grid;
-    grid-template-columns: 44px minmax(0, 1fr);
+    grid-template-columns: 52px 44px minmax(0, 1fr) 52px;
     align-items: center;
-    gap: 8px;
-    padding: 6px 12px max(14px, calc(env(safe-area-inset-bottom) + 6px));
+    padding: 4px 8px max(4px, env(safe-area-inset-bottom));
     border-top: 1px solid var(--line);
-    background: color-mix(in srgb, var(--surface), transparent 4%);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    transition: opacity 0.18s ease, transform 0.18s ease, visibility 0.18s;
+    background: var(--surface);
 }
+
 .reader-nav.chapters-unavailable {
-    grid-template-columns: minmax(0, 1fr);
-    padding-right: 16px;
-    padding-left: 16px;
+    grid-template-columns: 52px minmax(0, 1fr) 52px;
 }
 
 .progress-control {
@@ -633,8 +505,8 @@ body.reader-controls-hidden .reader-nav {
 #progress-slider {
     width: 100%;
     accent-color: var(--accent);
-    touch-action: pan-y;
 }
+
 .progress-tooltip {
     position: absolute;
     z-index: 2;
@@ -722,21 +594,6 @@ body.reader-controls-hidden .reader-nav {
     box-shadow: var(--shadow);
 }
 
-.dialog-actions {
-    display: flex;
-    gap: 12px;
-    margin-top: 20px;
-    justify-content: flex-end;
-}
-
-.secondary-button {
-    padding: 10px 16px;
-    border: 1px solid var(--line);
-    border-radius: 999px;
-    background: transparent;
-    color: var(--ink);
-    cursor: pointer;
-}
 .settings-dialog::backdrop {
     background: rgb(0 0 0 / 42%);
     backdrop-filter: blur(2px);
@@ -834,22 +691,6 @@ body.reader-controls-hidden .reader-nav {
     text-overflow: ellipsis;
     transform: translateX(-50%);
     white-space: nowrap;
-}
-.quick-return-button {
-    position: fixed;
-    bottom: max(72px, calc(env(safe-area-inset-bottom) + 64px));
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 25;
-    padding: 8px 18px;
-    border-radius: 999px;
-    background: var(--accent);
-    color: var(--paper);
-    font-size: 0.88rem;
-    font-weight: 600;
-    box-shadow: 0 4px 16px rgb(4 15 15 / 24%);
-    white-space: nowrap;
-    cursor: pointer;
 }
 
 .dictionary-dialog {

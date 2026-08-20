@@ -16,24 +16,14 @@
                 <strong id="book-title">Reader</strong>
                 <span id="book-progress" aria-live="polite">No book open</span>
             </div>
-            <button id="theme-button" class="icon-button" type="button" aria-label="Switch color theme" title="Switch color theme">
-                <svg class="app-bar-icon" viewBox="0 0 24 24" aria-hidden="true">
-                    <circle cx="12" cy="12" r="9"></circle>
-                    <path class="theme-icon-fill" d="M12 3a9 9 0 0 0 0 18Z"></path>
-                </svg>
-            </button>
-            <button id="settings-button" class="icon-button" type="button" aria-label="Reading settings" title="Reading settings">
-                <svg class="app-bar-icon settings-icon" viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="M9.7 2.5h4.6l.5 2.1c.5.2 1 .5 1.4.8l2.1-.7 2.3 4-1.6 1.5c.1.6.1 1.1 0 1.7l1.6 1.5-2.3 4-2.1-.7c-.4.3-.9.6-1.4.8l-.5 2.1H9.7l-.5-2.1c-.5-.2-1-.5-1.4-.8l-2.1.7-2.3-4L5 11.9a8 8 0 0 1 0-1.7L3.4 8.7l2.3-4 2.1.7c.4-.3.9-.6 1.4-.8l.5-2.1ZM12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z"></path>
-                </svg>
-            </button>
+            <button id="theme-button" class="icon-button" type="button" aria-label="Switch color theme" title="Switch color theme">◐</button>
+            <button id="settings-button" class="icon-button" type="button" aria-label="Reading settings" title="Reading settings">Aa</button>
         </header>
 
         <section id="library" class="library-view" aria-labelledby="library-title">
             <div class="library-heading">
                 <div>
                     <h1 id="library-title">Library</h1>
-                    <p id="streak-badge" class="streak-badge" aria-live="polite">0-day reading streak</p>
                 </div>
             </div>
 
@@ -51,6 +41,7 @@
         <section id="reader-shell" class="reader-shell" hidden aria-label="Book reader">
             <div id="reader" class="reader"></div>
             <nav class="reader-nav chapters-unavailable" aria-label="Page navigation">
+                <button id="previous-button" class="nav-button" type="button" aria-label="Previous page">←</button>
                 <button id="chapters-button" class="nav-button chapters-button" type="button" aria-label="Chapters" title="Chapters" hidden disabled>
                     <span class="menu-icon" aria-hidden="true"></span>
                 </button>
@@ -58,12 +49,12 @@
                     <output id="progress-tooltip" class="progress-tooltip" hidden></output>
                     <input id="progress-slider" type="range" min="0" max="1" step="0.001" value="0" aria-label="Reading progress">
                 </div>
+                <button id="next-button" class="nav-button" type="button" aria-label="Next page">→</button>
             </nav>
         </section>
 
         <input id="file-input" type="file" hidden accept=".epub,.pdf,.djvu,.djv,.mobi,.prc,.azw,.azw3,.fb2,.fbz,.fb2.zip,.cbz,.txt,.text,.md,.html,.htm,.xhtml,application/epub+zip,application/pdf,image/vnd.djvu,application/x-mobipocket-ebook,application/vnd.amazon.ebook,application/vnd.comicbook+zip,application/x-fictionbook+xml,text/plain,text/html">
 
-        <button id="quick-return-button" class="primary-button quick-return-button" type="button" hidden></button>
         <button id="selection-lookup-button" class="primary-button selection-lookup-button" type="button" hidden>Define</button>
 
         <dialog id="settings-dialog" class="settings-dialog">
@@ -80,14 +71,6 @@
                         <option value="light">Light</option>
                         <option value="dark">Dark</option>
                         <option value="night">Night</option>
-                    </select>
-                </label>
-
-                <label class="field">
-                    <span>Reading direction</span>
-                    <select id="flow-select">
-                        <option value="paginated">Horizontal pages</option>
-                        <option value="scrolled">Vertical scroll</option>
                     </select>
                 </label>
 
@@ -138,19 +121,6 @@
                     <button class="icon-button" value="close" aria-label="Close dictionary">×</button>
                 </header>
                 <div id="dictionary-results" class="dictionary-results" aria-live="polite"></div>
-            </form>
-        </dialog>
-        <dialog id="completion-dialog" class="settings-dialog completion-dialog" aria-labelledby="completion-dialog-title">
-            <form method="dialog">
-                <header>
-                    <h2 id="completion-dialog-title">Finished Reading?</h2>
-                    <button class="icon-button" value="close" aria-label="Close completion prompt">×</button>
-                </header>
-                <p id="completion-dialog-text">You have reached the end of the book. Would you like to mark it as finished?</p>
-                <div class="dialog-actions">
-                    <button id="completion-confirm-button" class="primary-button" type="button">Mark as Finished</button>
-                    <button id="completion-dismiss-button" class="secondary-button" type="button">Not Yet</button>
-                </div>
             </form>
         </dialog>
 
