@@ -24,6 +24,18 @@ android {
         }
     }
 
+    flavorDimensions += "channel"
+    productFlavors {
+        create("normal") {
+            dimension = "channel"
+        }
+        create("beta") {
+            dimension = "channel"
+            applicationIdSuffix = ".beta"
+            versionNameSuffix = "-beta"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
